@@ -284,23 +284,24 @@ const BODYPART_FALLBACK={"胸":"胸（未分類）","肩":"肩（未分類）","
 
 /* テンプレ項目 ti(種目名,セット,rep下,rep上,RIR,休憩秒) */
 function ti(name,sets,lo,hi,rir,rest){return {exercise_id:"ex_"+name,sets,rep_low:lo,rep_high:hi,rir,rest_sec:rest};}
+const TPL_SEED_VER=2;
 const SEED_TEMPLATES=[
-  {id:"tpl_upperA",name:"Upper A（押す・胸/三頭/サイド）",split_key:"upperA",order:0,items:[
-    ti("インクラインダンベルプレス",3,8,12,2,120),ti("ダンベルプレス",3,10,12,2,120),
-    ti("ダンベルショルダープレス",3,8,12,2,120),ti("サイドレイズ",4,12,20,1,60),
-    ti("ナローダンベルプレス",3,10,12,2,90),ti("フレンチプレス",3,10,15,1,60)]},
-  {id:"tpl_lowerA",name:"Lower A（大腿四頭寄り）",split_key:"lowerA",order:1,items:[
-    ti("ゴブレットスクワット",4,10,15,2,150),ti("ブルガリアンスクワット",3,8,12,2,120),
-    ti("ダンベルルーマニアンデッドリフト",3,10,12,2,120),ti("カーフレイズ",4,12,20,1,60),
-    ti("アブローラー",3,8,12,2,60)]},
-  {id:"tpl_upperB",name:"Upper B（引く・広背筋幅/リア）",split_key:"upperB",order:2,items:[
-    ti("ダンベルプルオーバー",3,12,15,1,90),ti("シングルロウ",3,8,12,2,90),
-    ti("チェストサポーテッドロウ",3,10,12,2,90),ti("リアレイズ",4,12,20,1,60),
-    ti("サイドレイズ",3,12,20,1,60),ti("インクラインダンベルカール",3,10,15,1,60)]},
-  {id:"tpl_lowerB",name:"Lower B（ハム/臀筋寄り）",split_key:"lowerB",order:3,items:[
-    ti("ダンベルルーマニアンデッドリフト",4,8,12,2,150),ti("ブルガリアンスクワット",3,10,15,2,120),
-    ti("ゴブレットスクワット",3,12,15,2,120),ti("カーフレイズ",4,15,20,1,60),
-    ti("アブローラー",3,10,12,2,60)]}
+  {id:"tpl_upperA",name:"Upper A（押す・ストレッチ重視）",split_key:"upperA",order:0,items:[
+    ti("インクラインダンベルプレス",3,8,12,1,120),ti("ダンベルフライ",3,12,15,1,90),
+    ti("ダンベルショルダープレス",3,8,12,1,120),ti("サイドレイズ",4,12,20,0,60),
+    ti("フレンチプレス",3,10,15,1,75),ti("ナローダンベルプレス",2,10,12,1,75)]},
+  {id:"tpl_lowerA",name:"Lower A（大腿四頭・深く）",split_key:"lowerA",order:1,items:[
+    ti("ブルガリアンスクワット",3,8,12,1,120),ti("ゴブレットスクワット",3,10,15,1,120),
+    ti("ダンベルルーマニアンデッドリフト",3,10,12,1,120),ti("カーフレイズ",4,12,20,0,60),
+    ti("アブローラー",3,8,12,1,60)]},
+  {id:"tpl_upperB",name:"Upper B（引く・広背筋伸展）",split_key:"upperB",order:2,items:[
+    ti("ダンベルプルオーバー",3,12,15,1,90),ti("シングルロウ",3,8,12,1,90),
+    ti("チェストサポーテッドロウ",3,10,12,1,90),ti("リアレイズ",4,12,20,0,60),
+    ti("インクラインダンベルカール",3,10,15,1,60),ti("サイドレイズ",3,12,20,0,60)]},
+  {id:"tpl_lowerB",name:"Lower B（ハム/臀筋伸展）",split_key:"lowerB",order:3,items:[
+    ti("ダンベルルーマニアンデッドリフト",4,8,12,1,150),ti("ブルガリアンスクワット",3,10,15,1,120),
+    ti("ゴブレットスクワット",3,12,15,1,120),ti("カーフレイズ",4,15,20,0,60),
+    ti("アブローラー",3,10,12,1,60)]}
 ];
 const SETTYPE_LABEL={"normal":"通常","myo-rep":"ミオ","drop":"ドロップ","partial":"部分","tempo":"テンポ"};
 const METHODS=["ダブルプログレッション（reps範囲を広げる）","伸展位パーシャル","テンポ操作（エキセン3-5秒＋ストレッチ1-2秒ポーズ）","Myo-reps／ドロップセット","メカニカルドロップセット","バンド併用","片手集中負荷"];
@@ -326,7 +327,16 @@ async function seedIfEmpty(){
   const tg=await getAll("targets");
   if(tg.length===0){await bulkPut("targets",MUSCLES.map(m=>({id:m,muscle_tag:m,mev:SEED_TARGETS[m][0],mav_low:SEED_TARGETS[m][1],mav_high:SEED_TARGETS[m][2],mrv:SEED_TARGETS[m][3]})));}
   const tp=await getAll("templates");
-  if(tp.length===0){await bulkPut("templates",SEED_TEMPLATES.map(t=>({...t,items:t.items.map(i=>({...i}))})));}
+  if(tp.length===0){
+    await bulkPut("templates",SEED_TEMPLATES.map(t=>({...t,items:t.items.map(i=>({...i}))})));
+    await put("meta",{id:"tpl_seed_ver",v:TPL_SEED_VER});
+  }else{
+    const ver=(await getOne("meta","tpl_seed_ver"))||{v:0};
+    if((ver.v||0)<TPL_SEED_VER){
+      for(const t of SEED_TEMPLATES){await put("templates",{...t,items:t.items.map(i=>({...i}))});}
+      await put("meta",{id:"tpl_seed_ver",v:TPL_SEED_VER});
+    }
+  }
 }
 
 /* ============ 状態 ============ */
