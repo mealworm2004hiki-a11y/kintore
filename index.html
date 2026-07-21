@@ -907,8 +907,8 @@ function openSettings(){
 /* ============ CSVインポート ============ */
 function openImport(){
   openSheet(`<div class="sheet-head"><h2>CSVインポート</h2><button onclick="closeSheet()">×</button></div>
-    <div class="file-drop">kinnikのtraining CSVを選択してください<br><span style="font-size:11px">列: Date / Exercise / Weight / Reps / RPE/RIR ...</span></div>
-    <input type="file" id="csvFile" accept=".csv,text/csv" style="width:100%;padding:10px 0">
+    <div class="file-drop"><b>kinnik_CSV_training…</b> を選んでください<br><span style="font-size:11px">※ group_set / body_data / aerobic 等の他4ファイルは非対応</span></div>
+    <input type="file" id="csvFile" accept=".csv,.txt,text/csv,text/comma-separated-values,text/plain,application/vnd.ms-excel,application/csv" style="width:100%;padding:10px 0">
     <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;color:var(--muted)">
       <input type="checkbox" id="csvReplace" style="width:auto"> 取り込み前に既存の記録を全消去する</label>
     <button class="btn-primary" style="width:100%;margin-top:16px" onclick="doImport()">取り込む</button>
@@ -950,7 +950,7 @@ async function doImport(){
     const ci={date:col("date"),bp:col("body part"),ex:col("exercise"),gid:col("group session id"),
       user:col("user"),set:col("set"),w:col("weight"),reps:col("reps"),rir:col("rpe/rir"),
       st:col("set type"),sm:col("set memo"),note:col("note")};
-    if(ci.ex<0||ci.date<0)throw new Error("Exercise / Date 列が見つかりません。列名を確認してください。");
+    if(ci.ex<0||ci.date<0)throw new Error("このファイルはトレーニング記録ではないようです（Exercise / Date 列なし）。kinnik_CSV_training… という名前のCSVを選んでください。");
     if(document.getElementById("csvReplace").checked){await clearStore("setlogs");await clearStore("sessions");}
     const newEx={},logs=[],sessions={};let unmatched=0,fallback=0,n=0,skipped=0;
     for(let i=1;i<rows.length;i++){

@@ -2,3 +2,5 @@
 *.log
 _sample_*.csv
 _plateau_*.csv
+_real_*.csv
+*.csv
