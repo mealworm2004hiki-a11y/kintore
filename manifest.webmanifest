@@ -1,0 +1,14 @@
+{
+  "name": "筋トレ記録",
+  "short_name": "筋トレ",
+  "description": "自宅ダンベル美筋トレの記録・補助アプリ",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14171a",
+  "theme_color": "#14171a",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
