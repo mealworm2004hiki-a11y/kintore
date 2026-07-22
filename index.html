@@ -175,6 +175,12 @@
   .prog-card .th{display:flex;align-items:center;gap:7px;font-size:12px;color:#e0b070;margin-bottom:7px}
   .prog-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:.5px solid var(--line);font-size:13px}
   .prog-item .up{font-family:var(--font-mono);color:#8fd0bf}
+  .pin-best{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface2);border-radius:10px;padding:12px 14px}
+  .pin-best .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:9px 16px;font-size:14px;font-weight:500;flex-shrink:0}
+  .pin-best .go:active{transform:scale(.98)}
+  .pin-mus{display:flex;justify-content:space-between;align-items:center;padding:12px 4px;border-bottom:.5px solid var(--line);font-size:14px}
+  .pin-exs{padding:2px 0 10px 10px}
+  .pin-ex{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;font-size:13px}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 4px}
   .chip{background:var(--surface2);border:.5px solid var(--line);color:#c9cdd1;border-radius:16px;padding:6px 13px;font-size:13px}
   .chip.on{background:rgba(193,99,43,.18);color:var(--rust-l);border-color:transparent}
@@ -621,6 +627,7 @@ function renderRecord(){
     STATE.templates.forEach(t=>{html+=`<button class="start-tile" onclick="startFromDateTemplate('${t.id}')">
       <div class="t">${esc(t.name.split("（")[0])}</div><div class="s">${t.items.length}種目</div></button>`;});
     html+=`</div><button class="btn-ghost" style="width:100%;margin-top:12px" onclick="startBlankFromDate()">白紙で始める</button>
+      <button class="btn-ghost" style="width:100%;margin-top:8px" onclick="openPinpoint()">1種目だけ / 弱点部位を狙う</button>
       <button class="btn-ghost" style="width:100%;margin-top:8px" onclick="openConditioning()">コンディショニング（薪割り等）を記録</button>`;
     view.innerHTML=html;return;
   }
@@ -994,6 +1001,7 @@ function homeSuggestHTML(){
     <div class="tbtns" style="margin-top:10px">
       <button class="go" onclick="buildBalancedDraft('${r.template.id}')">この内容で記録</button>
       ${r.express?`<button class="btn-sm" onclick="buildBalancedDraft('${r.express.id}')">時短で</button>`:""}
+      <button class="btn-sm" onclick="openPinpoint()">1種目/部位</button>
     </div></div>`;
 }
 function homeProgressHTML(){
@@ -1001,6 +1009,50 @@ function homeProgressHTML(){
   return `<div class="prog-card"><div class="th">重量アップの合図</div>
     ${cues.map(c=>`<div class="prog-item"><span>${esc(c.name)} <span style="color:var(--dim)">${fmtN(c.cur)}kg×${c.hi}達成</span></span>
       <span class="up">${c.next!=null?`→ ${fmtN(c.next)}kg`:"上限"}</span></div>`).join("")}</div>`;
+}
+function suggestedSetsFor(exId){let s=null;STATE.templates.forEach(t=>t.items.forEach(it=>{if(it.exercise_id===exId&&(s==null||it.sets>s))s=it.sets;}));return s||3;}
+function firstTemplateItem(exId){let f=null;STATE.templates.forEach(t=>t.items.forEach(it=>{if(it.exercise_id===exId&&!f)f=it;}));return f;}
+function bestSingleExercise(def){
+  let best=null;
+  STATE.ex.forEach(ex=>{if(!ex.is_active)return;const n=suggestedSetsFor(ex.id);
+    let cov=0,top=null,topd=-1;
+    ex.muscle_tags.forEach(tg=>{const w=tg.role==="primary"?1:0.5;cov+=Math.min(n*w,def[tg.tag]||0);
+      if((def[tg.tag]||0)>topd){topd=def[tg.tag]||0;top=tg.tag;}});
+    if(!best||cov>best.cov)best={exId:ex.id,cov,reasonMuscle:top};});
+  return best&&best.cov>0?best:null;
+}
+function exercisesForMuscle(m){
+  const inTpl=new Set();STATE.templates.forEach(t=>t.items.forEach(it=>inTpl.add(it.exercise_id)));
+  return STATE.ex.filter(x=>x.is_active&&x.muscle_tags.some(tg=>tg.tag===m))
+    .map(x=>({id:x.id,name:x.name,role:(x.muscle_tags.find(tg=>tg.tag===m)||{}).role,inTpl:inTpl.has(x.id)}))
+    .sort((a,b)=>((a.role==="primary"?0:1)-(b.role==="primary"?0:1))||(b.inTpl-a.inTpl)||a.name.localeCompare(b.name,"ja"))
+    .slice(0,6);
+}
+function startSingle(exId){
+  const date=todayISO(),n=suggestedSetsFor(exId),item=firstTemplateItem(exId),last=lastRecordFor(exId,date),arr=[];
+  for(let i=0;i<n;i++){const src=last?(last[i]||last[last.length-1]):null;
+    arr.push({weight:src?src.weight:"",reps:src?src.reps:"",rir:src?src.rir:(item?item.rir:1),set_type:"normal"});}
+  STATE.draft={sessionId:"app_"+date+"_"+Date.now(),date,split_day:"custom",entries:[{exercise_id:exId,memo:"",sets:arr,hint:item||undefined}]};
+  closeSheet();switchTab("record");
+}
+function togglePin(m){STATE._pinMuscle=STATE._pinMuscle===m?null:m;openPinpoint();}
+function openPinpoint(){
+  const def=deficitMap(),best=bestSingleExercise(def),muscles=MUSCLES.slice().sort((a,b)=>(def[b]||0)-(def[a]||0));
+  let h=`<div class="sheet-head"><h2>ピンポイント</h2><button onclick="closeSheet()">×</button></div>
+    <div class="msg info" style="display:block">時間がない日や、弱い部位を狙いたいとき用。1種目から記録できます。</div>`;
+  if(best){const ex=STATE.exMap[best.exId];
+    h+=`<div class="section-label" style="margin-top:16px">今すぐ1種目やるなら</div>
+      <div class="pin-best"><div><div style="font-size:15px">${esc(ex.name)}</div>
+      <div style="font-size:12px;color:var(--dim);margin-top:2px">${esc(best.reasonMuscle)} が今週手薄 → 一番効率よく補える</div></div>
+      <button class="go" onclick="startSingle('${esc(best.exId)}')">記録</button></div>`;}
+  h+=`<div class="section-label" style="margin-top:18px">部位から選ぶ（今週の残りセット順）</div>`;
+  muscles.forEach(m=>{const rem=fmtN(def[m]||0),open=STATE._pinMuscle===m;
+    h+=`<div class="pin-mus" onclick="togglePin('${esc(m)}')"><span>${esc(m)} <span style="color:var(--dim);font-size:11px">${open?"▲":"▼"}</span></span>
+      <span class="num" style="color:${(def[m]||0)>0?'var(--amber)':'var(--dim)'}">残り +${rem}</span></div>`;
+    if(open){h+=`<div class="pin-exs">`+exercisesForMuscle(m).map(x=>
+      `<div class="pin-ex"><span>${esc(x.name)}${x.role==="secondary"?' <span style="color:var(--dim)">(補助)</span>':""}</span>
+        <button class="btn-sm accent" onclick="startSingle('${esc(x.id)}')">記録</button></div>`).join("")+`</div>`;}});
+  openSheet(h);
 }
 
 /* ============ タブ ============ */
@@ -1224,7 +1276,8 @@ Object.assign(window,{STATE,switchTab,renderRecord,renderSplit,renderTplEditor,l
   startFromTemplate,startFromDateTemplate,startBlank,startBlankFromDate,discardDraft,saveDraft,
   addSet,rmSet,rmEntry,goRecord,addTemplate,openTemplateEditor,tplSet,tplMove,tplDel,saveTemplate,deleteTemplate,
   renderTrend,tryMethod,showHistory,openCoach,saveCoach,clearMeso,
-  openConditioning,saveConditioning,delConditioning,condHint,buildBalancedDraft});
+  openConditioning,saveConditioning,delConditioning,condHint,buildBalancedDraft,
+  openPinpoint,togglePin,startSingle});
 </script>
 </body>
 </html>
