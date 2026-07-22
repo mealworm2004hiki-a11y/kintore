@@ -162,6 +162,19 @@
   .cond-list{margin-top:12px;border-top:.5px solid var(--line)}
   .cond-item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:.5px solid var(--line);font-size:13px}
   .cond-item .del{background:transparent;border:none;color:var(--dim);font-size:15px;padding:0 2px}
+  .today-card{background:var(--surface);border:.5px solid var(--line);border-left:3px solid var(--patina);border-radius:0 14px 14px 0;padding:14px 16px;margin-bottom:14px}
+  .today-card .th{display:flex;align-items:center;gap:7px;font-size:12px;color:#8fd0bf;margin-bottom:3px}
+  .today-card .tt{font-size:17px;color:var(--text);font-weight:500;margin-bottom:4px}
+  .today-card .tr{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px}
+  .today-card .tbtns{display:flex;gap:8px}
+  .today-card .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:500}
+  .today-card .go:active{transform:scale(.98)}
+  .need-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+  .need-chip{font-size:11px;font-family:var(--font-mono);background:var(--surface2);border-radius:5px;padding:3px 8px;color:#c9cdd1}
+  .prog-card{background:var(--surface);border:.5px solid var(--line);border-left:3px solid var(--amber);border-radius:0 14px 14px 0;padding:12px 16px;margin-bottom:14px}
+  .prog-card .th{display:flex;align-items:center;gap:7px;font-size:12px;color:#e0b070;margin-bottom:7px}
+  .prog-item{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:.5px solid var(--line);font-size:13px}
+  .prog-item .up{font-family:var(--font-mono);color:#8fd0bf}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 4px}
   .chip{background:var(--surface2);border:.5px solid var(--line);color:#c9cdd1;border-radius:16px;padding:6px 13px;font-size:13px}
   .chip.on{background:rgba(193,99,43,.18);color:var(--rust-l);border-color:transparent}
@@ -291,7 +304,8 @@ const BODYPART_FALLBACK={"胸":"胸（未分類）","肩":"肩（未分類）","
 
 /* テンプレ項目 ti(種目名,セット,rep下,rep上,RIR,休憩秒) */
 function ti(name,sets,lo,hi,rir,rest){return {exercise_id:"ex_"+name,sets,rep_low:lo,rep_high:hi,rir,rest_sec:rest};}
-const TPL_SEED_VER=5;
+const TPL_SEED_VER=6;
+const DEFAULT_LADDER=[3,5,7,9,12,14,16,18,21,23,25,27,30,32,35,37,40,42];
 const SEED_TEMPLATES=[
   {id:"tpl_upperA",name:"Upper A（強さ寄り）",split_key:"upperA",order:0,items:[
     ti("インクラインダンベルプレス",4,5,8,2,180),ti("シングルロウ",4,6,8,2,150),
@@ -310,10 +324,10 @@ const SEED_TEMPLATES=[
     ti("ダンベルルーマニアンデッドリフト",3,10,12,1,120),ti("リバースランジ",3,10,15,1,90),
     ti("ブルガリアンスクワット",3,12,15,1,90),ti("カーフレイズ",4,15,20,0,60),
     ti("ダンベルヒップスラスト",3,12,15,1,75),ti("アブローラー",3,10,15,1,60)]},
-  {id:"tpl_upperExp",name:"Upper 時短（express）",split_key:"custom",order:4,items:[
+  {id:"tpl_upperExp",name:"Upper 時短（express）",split_key:"upperExp",order:4,items:[
     ti("インクラインダンベルプレス",3,8,12,1,75),ti("シングルロウ",3,8,12,1,75),
     ti("ダンベルショルダープレス",3,8,12,1,60),ti("サイドレイズ",3,12,20,0,45)]},
-  {id:"tpl_lowerExp",name:"Lower 時短（express）",split_key:"custom",order:5,items:[
+  {id:"tpl_lowerExp",name:"Lower 時短（express）",split_key:"lowerExp",order:5,items:[
     ti("ダンベルルーマニアンデッドリフト",3,8,12,1,90),ti("ブルガリアンスクワット",3,8,12,1,75),
     ti("カーフレイズ",3,12,20,0,45),ti("アブローラー",3,8,12,1,45)]}
 ];
@@ -431,7 +445,7 @@ function renderAnalysis(){
   const nextDisabled=STATE.weekOffset>=0;document.getElementById("wkNext").disabled=nextDisabled;
   const A=aggregateWeek(ws);
   let html="";
-  if(STATE.weekOffset===0)html+=coachingHTML();
+  if(STATE.weekOffset===0){html+=homeSuggestHTML();html+=homeProgressHTML();html+=coachingHTML();}
   if(factor!==1)html+=`<div class="msg" style="display:block;background:rgba(201,138,63,.16);color:#e0b070">デロード週：ボリューム目安を45%に下げて表示中</div>`;
   html+=`<div class="summary-card"><div class="summary-grid">
     <div class="stat"><div class="k">総セット</div><div class="v">${A.setCount}</div></div>
@@ -613,6 +627,7 @@ function renderRecord(){
   const d=STATE.draft;
   let html=`<div class="datepick"><span style="font-size:13px;color:var(--muted)">日付</span>
     <input type="date" value="${d.date}" oninput="STATE.draft.date=this.value"></div>`;
+  if(d._balance&&d._balance.length)html+=`<div class="msg info" style="display:block;margin-bottom:12px">バランス調整：${esc(d._balance.join("、"))}（充足部位を自動で間引き）</div>`;
   d.entries.forEach((en,ei)=>{
     const ex=STATE.exMap[en.exercise_id];const unit=ex?weightUnit(ex):"kg";
     const hint=en.hint?`目安 ${en.hint.sets}×${en.hint.rep_low}-${en.hint.rep_high} · RIR${en.hint.rir} · 休${en.hint.rest_sec}s`:(ex?ex.loading_type:"");
@@ -761,6 +776,8 @@ function openCoach(){
   const m=STATE.meso,s=STATE.settings||{plateauN:5},monday=isoDate(mondayOf(new Date()));
   openSheet(`<div class="sheet-head"><h2>コーチング設定</h2><button onclick="openSettings()">×</button></div>
     <label class="fld">停滞検知：連続セッション数 N</label><input type="number" id="setN" value="${s.plateauN||5}">
+    <label class="fld">ダンベルの刻み（片手kg・カンマ区切り）</label>
+    <input type="text" id="setLadder" value="${((s.dbLadder&&s.dbLadder.length)?s.dbLadder:DEFAULT_LADDER).join(",")}" style="font-family:var(--font-mono)">
     <div style="height:1px;background:var(--line);margin:18px 0"></div>
     <div class="lbl" style="font-size:13px;margin-bottom:8px">メソサイクル（半自動）</div>
     ${m?`<div class="msg info" style="display:block;margin-bottom:10px">現在：${m.start_date}開始 / ${m.length_weeks}週 / デロードW${m.deload_week_number}</div>`:`<div class="msg info" style="display:block;margin-bottom:10px">未設定。開始すると「蓄積期 W3/5」等が自動表示され、デロード週は目安を45%に下げます。</div>`}
@@ -772,7 +789,8 @@ function openCoach(){
 }
 async function saveCoach(){
   const n=parseInt(document.getElementById("setN").value,10)||5;
-  STATE.settings={id:"settings",plateauN:Math.max(2,n)};await put("meta",STATE.settings);
+  const ladder=(document.getElementById("setLadder").value||"").split(",").map(x=>parseFloat(x.trim())).filter(x=>!isNaN(x)).sort((a,b)=>a-b);
+  STATE.settings={id:"settings",plateauN:Math.max(2,n),dbLadder:ladder.length?ladder:DEFAULT_LADDER};await put("meta",STATE.settings);
   const start=document.getElementById("mStart").value,len=parseInt(document.getElementById("mLen").value,10)||5,de=parseInt(document.getElementById("mDe").value,10)||len;
   if(start){STATE.meso={id:"mesocycle",start_date:start,length_weeks:len,deload_week_number:de};await put("meta",STATE.meso);}
   await loadState();const c=document.getElementById("coachMsg");c.className="msg ok";c.textContent="保存しました。";
@@ -891,6 +909,98 @@ async function saveConditioning(){
 }
 async function delConditioning(id){
   await del("conditioning",id);STATE.conditioning=STATE.conditioning.filter(c=>c.id!==id);openConditioning();
+}
+
+/* ============ 今日のおすすめ＋重量アップ ============ */
+function catOf(sk){sk=String(sk||"");return sk.indexOf("upper")===0?"upper":sk.indexOf("lower")===0?"lower":null;}
+function scaledTargets(){
+  const info=computeWeekInfo(currentWeekStart());const f=info&&info.is_deload?0.45:1;const out={};
+  MUSCLES.forEach(m=>{const t=STATE.targets[m];if(!t){out[m]=null;return;}
+    out[m]={mev:(t.mev||0)*f,mav_low:t.mav_low==null?null:t.mav_low*f,mav_high:t.mav_high==null?null:t.mav_high*f,mrv:t.mrv==null?null:t.mrv*f};});
+  return out;
+}
+function weeklyNow(){return aggregateWeek(currentWeekStart()).totals;}
+function deficitMap(){
+  const cur=weeklyNow(),tg=scaledTargets(),d={};
+  MUSCLES.forEach(m=>{const t=tg[m];const target=t?(t.mav_low!=null?t.mav_low:t.mev):0;
+    d[m]=Math.max(0,(target||0)-(cur[m]||0));});
+  return d;
+}
+function templateCoverage(t,def){let cov=0;t.items.forEach(it=>{const ex=STATE.exMap[it.exercise_id];if(!ex)return;
+  ex.muscle_tags.forEach(tag=>{const w=tag.role==="primary"?1:0.5;cov+=Math.min(it.sets*w,def[tag.tag]||0);});});return cov;}
+function lastDateForSplit(sk){let mx=null;(STATE.sessions||[]).forEach(s=>{if(s.split_day===sk&&(!mx||s.date>mx))mx=s.date;});return mx;}
+function lastCategory(){let best=null;(STATE.sessions||[]).forEach(s=>{const c=catOf(s.split_day);if(!c)return;if(!best||s.date>best.date)best={date:s.date,cat:c};});return best?best.cat:null;}
+function recommendToday(){
+  if(!STATE.templates.length)return null;
+  const def=deficitMap();
+  const upKeys=MUSCLE_GROUP["上半身・押す"].concat(MUSCLE_GROUP["上半身・引く/肩"]);
+  const totUpper=upKeys.reduce((s,m)=>s+(def[m]||0),0);
+  const totLower=MUSCLE_GROUP["下半身・体幹"].reduce((s,m)=>s+(def[m]||0),0);
+  const lastCat=lastCategory();
+  const cat=lastCat==="upper"?"lower":lastCat==="lower"?"upper":(totUpper>=totLower?"upper":"lower");
+  const mains=STATE.templates.filter(t=>["upperA","upperB","lowerA","lowerB"].includes(t.split_key)&&catOf(t.split_key)===cat);
+  if(!mains.length)return null;
+  mains.forEach(t=>{t._last=lastDateForSplit(t.split_key)||"0";t._cov=templateCoverage(t,def);});
+  mains.sort((a,b)=>a._last!==b._last?(a._last<b._last?-1:1):b._cov-a._cov);
+  const pick=mains[0];
+  const exp=STATE.templates.find(t=>t.split_key===(cat==="upper"?"upperExp":"lowerExp"));
+  const covered=[];pick.items.forEach(it=>{const ex=STATE.exMap[it.exercise_id];if(!ex)return;
+    ex.muscle_tags.forEach(tag=>{if(tag.role==="primary"&&(def[tag.tag]||0)>0&&!covered.includes(tag.tag))covered.push(tag.tag);});});
+  covered.sort((a,b)=>(def[b]||0)-(def[a]||0));
+  return {template:pick,express:exp,cat,lastCat,reason:covered.slice(0,3),def};
+}
+function buildBalancedDraft(tid){
+  const t=STATE.templates.find(x=>x.id===tid);if(!t)return;const date=todayISO();
+  const cur=weeklyNow(),tg=scaledTargets(),adj=[],entries=[];
+  t.items.forEach(it=>{const ex=STATE.exMap[it.exercise_id];if(!ex)return;
+    const pri=ex.muscle_tags.find(x=>x.role==="primary")||ex.muscle_tags[0];
+    const tt=pri?tg[pri.tag]:null;const c=pri?(cur[pri.tag]||0):0;let sets=it.sets;
+    if(tt&&tt.mrv!=null&&c>=tt.mrv){adj.push(ex.name+"→省略");return;}
+    if(tt&&tt.mav_high!=null&&c>=tt.mav_high){const ns=Math.max(1,sets-2);if(ns<sets){adj.push(ex.name+" "+sets+"→"+ns);sets=ns;}}
+    const last=lastRecordFor(it.exercise_id,date);const arr=[];
+    for(let i=0;i<sets;i++){const src=last?(last[i]||last[last.length-1]):null;
+      arr.push({weight:src?src.weight:"",reps:src?src.reps:"",rir:src?src.rir:it.rir,set_type:"normal"});}
+    entries.push({exercise_id:it.exercise_id,memo:"",sets:arr,hint:it});});
+  STATE.draft={sessionId:"app_"+date+"_"+Date.now(),date,split_day:t.split_key,entries,_balance:adj};
+  switchTab("record");
+}
+function nextNotch(w){const L=(STATE.settings&&STATE.settings.dbLadder)||DEFAULT_LADDER;for(const x of L){if(x>w)return x;}return null;}
+function exRepTarget(exId){let hi=null;STATE.templates.forEach(t=>t.items.forEach(it=>{if(it.exercise_id===exId&&(hi==null||it.rep_high>hi))hi=it.rep_high;}));return hi;}
+function tplRepHigh(sk,exId){const t=STATE.templates.find(x=>x.split_key===sk);if(!t)return null;const it=t.items.find(i=>i.exercise_id===exId);return it?it.rep_high:null;}
+function progressionCues(){
+  const maxDate=isoDate(latestLogDate()),out=[],sessById={};
+  (STATE.sessions||[]).forEach(s=>sessById[s.id]=s);
+  STATE.ex.forEach(ex=>{if(!ex.is_active||ex.loading_type==="自重")return;
+    const rows=STATE.logs.filter(l=>l.exercise_id===ex.id&&l.weight_kg!=null&&l.reps!=null);
+    if(!rows.length)return;let md=null;rows.forEach(r=>{if(!md||r.date>md)md=r.date;});
+    if(daysBetween(md,maxDate)>30)return;
+    const sess=rows.filter(r=>r.date===md);
+    const sk=(sessById[sess[0].session_id]||{}).split_day;
+    let hi=sk?tplRepHigh(sk,ex.id):null;if(hi==null)hi=exRepTarget(ex.id);if(hi==null)return;
+    if(!sess.every(r=>r.reps>=hi))return;
+    const c=Math.max(...sess.map(r=>r.weight_kg));
+    out.push({name:ex.name,cur:c,next:nextNotch(c),hi,date:md});});
+  return out.sort((a,b)=>b.date<a.date?-1:1).slice(0,6);
+}
+function homeSuggestHTML(){
+  const r=recommendToday();if(!r)return"";
+  const noDef=r.reason.length===0;
+  const need=r.reason.map(m=>`<span class="need-chip">${esc(m)} +${fmtN(r.def[m])}</span>`).join("");
+  return `<div class="today-card">
+    <div class="th">今日のおすすめ${r.lastCat?`（前回 ${r.lastCat==="upper"?"上半身":"下半身"}）`:""}</div>
+    <div class="tt">${esc(r.template.name)}</div>
+    <div class="tr">${noDef?"今週の目標はほぼ達成。休養か軽めでOK。":"今週まだ手薄な部位："}</div>
+    ${noDef?"":`<div class="need-list">${need}</div>`}
+    <div class="tbtns" style="margin-top:10px">
+      <button class="go" onclick="buildBalancedDraft('${r.template.id}')">この内容で記録</button>
+      ${r.express?`<button class="btn-sm" onclick="buildBalancedDraft('${r.express.id}')">時短で</button>`:""}
+    </div></div>`;
+}
+function homeProgressHTML(){
+  const cues=progressionCues();if(!cues.length)return"";
+  return `<div class="prog-card"><div class="th">重量アップの合図</div>
+    ${cues.map(c=>`<div class="prog-item"><span>${esc(c.name)} <span style="color:var(--dim)">${fmtN(c.cur)}kg×${c.hi}達成</span></span>
+      <span class="up">${c.next!=null?`→ ${fmtN(c.next)}kg`:"上限"}</span></div>`).join("")}</div>`;
 }
 
 /* ============ タブ ============ */
@@ -1114,7 +1224,7 @@ Object.assign(window,{STATE,switchTab,renderRecord,renderSplit,renderTplEditor,l
   startFromTemplate,startFromDateTemplate,startBlank,startBlankFromDate,discardDraft,saveDraft,
   addSet,rmSet,rmEntry,goRecord,addTemplate,openTemplateEditor,tplSet,tplMove,tplDel,saveTemplate,deleteTemplate,
   renderTrend,tryMethod,showHistory,openCoach,saveCoach,clearMeso,
-  openConditioning,saveConditioning,delConditioning,condHint});
+  openConditioning,saveConditioning,delConditioning,condHint,buildBalancedDraft});
 </script>
 </body>
 </html>
