@@ -284,13 +284,14 @@ const SEED_EXERCISES=[
   e("リバースランジ","lower",true,DB_DUMBBELL,["大腿四頭筋"],["臀筋","ハムストリング"]),
   e("ダンベルヒップスラスト","lower",true,SINGLE,["臀筋"],["ハムストリング"]),
   e("シールロウ","upper",true,DB_DUMBBELL,["広背筋"],["僧帽筋/背中厚み","二頭筋"]),
-  e("ファーマーズキャリー","upper",true,DB_DUMBBELL,["僧帽筋/背中厚み"],[],true)
+  e("ファーマーズキャリー","upper",true,DB_DUMBBELL,["僧帽筋/背中厚み"],[],true),
+  e("ダンベルホールド","upper",true,DB_DUMBBELL,["僧帽筋/背中厚み"],[],true)
 ];
 const BODYPART_FALLBACK={"胸":"胸（未分類）","肩":"肩（未分類）","背中":"背中（未分類）","腕":"腕（未分類）","足":"脚（未分類）","腹":"腹筋"};
 
 /* テンプレ項目 ti(種目名,セット,rep下,rep上,RIR,休憩秒) */
 function ti(name,sets,lo,hi,rir,rest){return {exercise_id:"ex_"+name,sets,rep_low:lo,rep_high:hi,rir,rest_sec:rest};}
-const TPL_SEED_VER=3;
+const TPL_SEED_VER=4;
 const SEED_TEMPLATES=[
   {id:"tpl_upperA",name:"Upper A（強さ寄り）",split_key:"upperA",order:0,items:[
     ti("インクラインダンベルプレス",4,5,8,2,180),ti("シングルロウ",4,6,8,2,150),
@@ -299,7 +300,7 @@ const SEED_TEMPLATES=[
   {id:"tpl_lowerA",name:"Lower A（強さ寄り）",split_key:"lowerA",order:1,items:[
     ti("ダンベルルーマニアンデッドリフト",4,6,8,2,180),ti("ブルガリアンスクワット",3,6,10,2,120),
     ti("ダンベルスクワット",3,8,12,1,120),ti("カーフレイズ",4,10,15,0,60),
-    ti("アブローラー",3,8,12,1,60),ti("ファーマーズキャリー",3,40,60,0,90)]},
+    ti("アブローラー",3,8,12,1,60),ti("ダンベルホールド",3,40,60,0,90)]},
   {id:"tpl_upperB",name:"Upper B（美しさ寄り）",split_key:"upperB",order:2,items:[
     ti("ダンベルフライ",3,10,15,1,75),ti("インクラインダンベルプレス",3,8,12,1,90),
     ti("ダンベルプルオーバー",3,10,15,1,75),ti("シールロウ",3,10,12,1,90),
