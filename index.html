@@ -291,7 +291,7 @@ const BODYPART_FALLBACK={"胸":"胸（未分類）","肩":"肩（未分類）","
 
 /* テンプレ項目 ti(種目名,セット,rep下,rep上,RIR,休憩秒) */
 function ti(name,sets,lo,hi,rir,rest){return {exercise_id:"ex_"+name,sets,rep_low:lo,rep_high:hi,rir,rest_sec:rest};}
-const TPL_SEED_VER=4;
+const TPL_SEED_VER=5;
 const SEED_TEMPLATES=[
   {id:"tpl_upperA",name:"Upper A（強さ寄り）",split_key:"upperA",order:0,items:[
     ti("インクラインダンベルプレス",4,5,8,2,180),ti("シングルロウ",4,6,8,2,150),
@@ -309,7 +309,13 @@ const SEED_TEMPLATES=[
   {id:"tpl_lowerB",name:"Lower B（美しさ寄り）",split_key:"lowerB",order:3,items:[
     ti("ダンベルルーマニアンデッドリフト",3,10,12,1,120),ti("リバースランジ",3,10,15,1,90),
     ti("ブルガリアンスクワット",3,12,15,1,90),ti("カーフレイズ",4,15,20,0,60),
-    ti("ダンベルヒップスラスト",3,12,15,1,75),ti("アブローラー",3,10,15,1,60)]}
+    ti("ダンベルヒップスラスト",3,12,15,1,75),ti("アブローラー",3,10,15,1,60)]},
+  {id:"tpl_upperExp",name:"Upper 時短（express）",split_key:"custom",order:4,items:[
+    ti("インクラインダンベルプレス",3,8,12,1,75),ti("シングルロウ",3,8,12,1,75),
+    ti("ダンベルショルダープレス",3,8,12,1,60),ti("サイドレイズ",3,12,20,0,45)]},
+  {id:"tpl_lowerExp",name:"Lower 時短（express）",split_key:"custom",order:5,items:[
+    ti("ダンベルルーマニアンデッドリフト",3,8,12,1,90),ti("ブルガリアンスクワット",3,8,12,1,75),
+    ti("カーフレイズ",3,12,20,0,45),ti("アブローラー",3,8,12,1,45)]}
 ];
 const SETTYPE_LABEL={"normal":"通常","myo-rep":"ミオ","drop":"ドロップ","partial":"部分","tempo":"テンポ"};
 const METHODS=["ダブルプログレッション（reps範囲を広げる）","伸展位パーシャル","テンポ操作（エキセン3-5秒＋ストレッチ1-2秒ポーズ）","Myo-reps／ドロップセット","メカニカルドロップセット","バンド併用","片手集中負荷"];
