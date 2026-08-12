@@ -936,7 +936,7 @@ function renderTrend(){
     const weeks=14;
     const colors=["var(--rust)","var(--patina)","var(--amber)"];
     const groups=Object.keys(MUSCLE_GROUP).map((g,i)=>({label:g,color:colors[i%colors.length],data:muscleGroupVolumeSeries(g,weeks)}));
-    const seriesList=[{label:"総合",color:"var(--rust-l)",data:weeklyTotalSeries(weeks)}].concat(groups);
+    const seriesList=[{label:"総合",color:"var(--text)",data:weeklyTotalSeries(weeks)}].concat(groups);
     html+=`<div class="section-label">週間ボリューム推移（総合・直近${weeks}週）</div>`+chartSVGMulti(seriesList);
   }else if(mode==="exercise"){
     html+=celebrationsHTML();
