@@ -173,6 +173,14 @@
   .today-card .tt{font-size:17px;color:var(--text);font-weight:500;margin-bottom:4px}
   .today-card .tr{font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:10px}
   .today-card .tbtns{display:flex;gap:8px}
+  .quick-card{background:linear-gradient(135deg,rgba(61,139,255,.14),rgba(45,212,191,.10));border:.5px solid var(--line);border-radius:16px;padding:16px;margin-bottom:16px}
+  .quick-card .qh{font-family:var(--font-head);font-size:19px;color:var(--text);letter-spacing:.02em}
+  .quick-card .qsub{font-size:12px;color:var(--muted);margin:4px 0 13px;line-height:1.5}
+  .quick-card .qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .quick-card .qbtn{background:var(--surface2);border:.5px solid var(--line);color:var(--text);border-radius:11px;padding:14px 4px;font-size:15px;font-weight:600;font-family:var(--font-head);letter-spacing:.02em}
+  .quick-card .qbtn:active{transform:scale(.95)}
+  .auto-banner{background:rgba(61,139,255,.14);border-radius:10px;padding:10px 13px;font-size:13px;color:var(--rust-l);margin-bottom:12px;display:flex;flex-direction:column;gap:2px}
+  .auto-banner span{font-size:11px;color:var(--muted)}
   .today-card .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:500}
   .today-card .go:active{transform:scale(.98)}
   .need-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
@@ -490,7 +498,7 @@ function renderAnalysis(){
   const nextDisabled=STATE.weekOffset>=0;document.getElementById("wkNext").disabled=nextDisabled;
   const A=aggregateWeek(ws);
   let html="";
-  if(STATE.weekOffset===0){html+=homeSuggestHTML();html+=bodyDiagramHTML();html+=rankBadgeHTML();html+=homeProgressHTML();}
+  if(STATE.weekOffset===0){html+=quickStartHTML();html+=homeSuggestHTML();html+=bodyDiagramHTML();html+=rankBadgeHTML();html+=homeProgressHTML();}
   if(factor!==1)html+=`<div class="msg" style="display:block;background:rgba(201,138,63,.16);color:#e0b070">デロード週：ボリューム目安を45%に下げて表示中</div>`;
   html+=`<div class="summary-card"><div class="summary-grid">
     <div class="stat"><div class="k">総セット</div><div class="v">${A.setCount}</div></div>
@@ -670,6 +678,7 @@ function renderRecord(){
   const d=STATE.draft;
   let html=`<div class="datepick"><span style="font-size:13px;color:var(--muted)">日付</span>
     <input type="date" value="${d.date}" oninput="STATE.draft.date=this.value"></div>`;
+  if(d._auto)html+=`<div class="auto-banner">⏱ ${esc(d._auto.label)}メニュー・約${d._auto.estMin}分／${d._auto.count}種目<span>${d._auto.noDeficit?"今週は目標達成ぎみ→まんべんなく":"今週手薄な部位を優先"}</span></div>`;
   if(d._balance&&d._balance.length)html+=`<div class="msg info" style="display:block;margin-bottom:12px">バランス調整：${esc(d._balance.join("、"))}（充足部位を自動で間引き）</div>`;
   d.entries.forEach((en,ei)=>{
     const ex=STATE.exMap[en.exercise_id];const unit=ex?weightUnit(ex):"kg";
@@ -1161,7 +1170,7 @@ function homeSuggestHTML(){
   const noDef=r.reason.length===0;
   const need=r.reason.map(m=>`<span class="need-chip">${esc(m)} +${fmtN(r.def[m])}</span>`).join("");
   return `<div class="today-card">
-    <div class="th">今日のおすすめ${r.lastCat?`（前回 ${r.lastCat==="upper"?"上半身":"下半身"}）`:""}</div>
+    <div class="th">しっかり組む日は（テンプレ）${r.lastCat?` · 前回 ${r.lastCat==="upper"?"上半身":"下半身"}`:""}</div>
     <div class="tt">${esc(r.template.name)}</div>
     <div class="tr">${noDef?"今週の目標はほぼ達成。休養か軽めでOK。":"今週まだ手薄な部位："}</div>
     ${noDef?"":`<div class="need-list">${need}</div>`}
@@ -1302,6 +1311,58 @@ function startSingle(exId){
   const{sets:arr,note}=smartSetsFor(exId,date,item?{...item,sets:n}:{sets:n,rir:1,rep_low:null,rep_high:null});
   STATE.draft={sessionId:"app_"+date+"_"+Date.now(),date,split_day:"custom",entries:[{exercise_id:exId,memo:"",sets:arr,hint:item||undefined,_note:note}]};
   closeSheet();switchTab("record");
+}
+/* ============ 時間で自動メニュー生成 ============ */
+const TIME_BUCKETS=[{label:"5分",min:5},{label:"15分",min:15},{label:"30分",min:30},{label:"じっくり",min:0}];
+function estExerciseSec(sets,rest){return sets*40+Math.max(0,sets-1)*(rest||75)+30;}
+function buildTimedWorkout(minutes){
+  const date=todayISO();
+  const def=deficitMap(),cur=weeklyNow();
+  const inTpl=new Set();STATE.templates.forEach(t=>t.items.forEach(it=>inTpl.add(it.exercise_id)));
+  // 手薄な部位順（不足がなければ「今週まだ少ない部位」順）にランク付け
+  let ranked=MUSCLES.filter(m=>(def[m]||0)>0).sort((a,b)=>(def[b]||0)-(def[a]||0));
+  const noDeficit=ranked.length===0;
+  if(noDeficit)ranked=MUSCLES.slice().sort((a,b)=>(cur[a]||0)-(cur[b]||0));
+  const budget=minutes>0?minutes*60:Infinity;
+  const maxEx=minutes>0?12:7;
+  const usedEx=new Set(),usedMuscle=new Set(),chosen=[];let spent=0;
+  const bestExFor=m=>{
+    const cands=STATE.ex.filter(x=>x.is_active&&!usedEx.has(x.id)&&x.muscle_tags.some(t=>t.tag===m&&t.role==="primary"));
+    if(!cands.length)return null;
+    cands.sort((a,b)=>(inTpl.has(b.id)-inTpl.has(a.id))||a.name.localeCompare(b.name,"ja"));
+    return cands[0];
+  };
+  for(const m of ranked){
+    if(chosen.length>=maxEx)break;
+    if(usedMuscle.has(m))continue;
+    const ex=bestExFor(m);if(!ex)continue;
+    const hint=firstTemplateItem(ex.id),rest=hint?hint.rest_sec:75;
+    let sets=Math.max(2,Math.min(suggestedSetsFor(ex.id),noDeficit?3:Math.ceil(def[m]||2)));
+    while(sets>2&&spent+estExerciseSec(sets,rest)>budget)sets--;
+    // 2セットも入らないなら（最初の1種目を除き）打ち切り
+    if(chosen.length>=1&&spent+estExerciseSec(2,rest)>budget)break;
+    chosen.push({exId:ex.id,sets,hint});
+    usedEx.add(ex.id);ex.muscle_tags.forEach(tg=>{if(tg.role==="primary")usedMuscle.add(tg.tag);});
+    spent+=estExerciseSec(sets,rest);
+  }
+  // 1種目も選べなかった場合の保険
+  if(!chosen.length){const b=bestSingleExercise(def)||(STATE.ex.find(x=>x.is_active)&&{exId:STATE.ex.find(x=>x.is_active).id});
+    if(b){const hint=firstTemplateItem(b.exId);chosen.push({exId:b.exId,sets:2,hint});spent=estExerciseSec(2,hint?hint.rest_sec:75);}}
+  const entries=chosen.map(c=>{
+    const h=c.hint?{...c.hint,sets:c.sets}:{sets:c.sets,rir:1,rep_low:null,rep_high:null};
+    const{sets,note}=smartSetsFor(c.exId,date,h);
+    return {exercise_id:c.exId,memo:"",sets,hint:c.hint||undefined,_note:note};});
+  STATE.draft={sessionId:"app_"+date+"_"+Date.now(),date,split_day:"auto",entries,
+    _auto:{label:minutes>0?minutes+"分":"じっくり",estMin:Math.max(1,Math.round(spent/60)),count:entries.length,noDeficit}};
+  switchTab("record");
+}
+function quickStartHTML(){
+  return `<div class="quick-card">
+    <div class="qh">⏱ 今日はどれくらいやる？</div>
+    <div class="qsub">押すだけ。今の状況に合わせてメニューを自動で組みます。</div>
+    <div class="qgrid">${TIME_BUCKETS.map(b=>
+      `<button class="qbtn" onclick="buildTimedWorkout(${b.min})">${b.label}</button>`).join("")}</div>
+  </div>`;
 }
 function togglePin(m){STATE._pinMuscle=STATE._pinMuscle===m?null:m;openPinpoint();}
 function openPinpoint(){
@@ -1552,7 +1613,7 @@ Object.assign(window,{STATE,switchTab,renderRecord,renderSplit,renderTplEditor,l
   addSet,rmSet,rmEntry,copySet,goRecord,addTemplate,openTemplateEditor,tplSet,tplMove,tplDel,saveTemplate,deleteTemplate,
   renderTrend,tryMethod,showHistory,openCoach,saveCoach,clearMeso,
   openConditioning,saveConditioning,delConditioning,condHint,buildBalancedDraft,
-  openPinpoint,togglePin,startSingle});
+  openPinpoint,togglePin,startSingle,buildTimedWorkout});
 </script>
 </body>
 </html>
