@@ -217,6 +217,26 @@
   .btn-sm:active,.btn-ghost:active,.toggle:active,.chip:active,.addbtn:active,.savebar button:active,
   nav.tabs a:active,.rm:active,.ex-rm:active,.del:active,.pick-item:active,.pin-mus:active,
   .plateau-row:active,.body-legend-item:active,.setrow .sn.copyable:active{transform:scale(.96);opacity:.85}
+
+  .rest-btn{background:rgba(61,139,255,.10);border:.5px dashed var(--rust);color:var(--rust-l);border-radius:9px;padding:9px;font-size:13px;margin-top:8px;width:100%}
+  .rest-btn:active{transform:scale(.97)}
+  .timer-bar{position:fixed;left:8px;right:8px;bottom:calc(74px + env(safe-area-inset-bottom));z-index:40;max-width:624px;margin:0 auto;background:var(--surface2);border:.5px solid var(--line);border-radius:14px;padding:11px 14px;display:none;box-shadow:0 8px 28px rgba(0,0,0,.45)}
+  .timer-bar.show{display:block;animation:tslide .18s ease}
+  @keyframes tslide{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}}
+  .timer-bar.done{background:rgba(45,212,191,.18);border-color:transparent}
+  .timer-bar.done.flash{animation:tflash .5s ease 2}
+  @keyframes tflash{0%,100%{background:rgba(45,212,191,.18)}50%{background:rgba(45,212,191,.42)}}
+  .timer-row{display:flex;align-items:center;gap:12px}
+  .timer-time{font-family:var(--font-mono);font-size:27px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;min-width:78px}
+  .timer-bar.done .timer-time{color:#7fe5d1}
+  .timer-lbl{font-size:11px;color:var(--muted);flex:1;line-height:1.3}
+  .timer-btns{display:flex;gap:6px;flex-shrink:0}
+  .timer-btns button{background:var(--surface);border:.5px solid var(--line);color:var(--text);border-radius:8px;padding:8px 10px;font-size:12px;font-family:var(--font-mono)}
+  .timer-btns button:active{transform:scale(.94)}
+  .timer-btns button.skip{color:var(--muted)}
+  .timer-prog{height:4px;background:var(--surface);border-radius:3px;margin-top:9px;overflow:hidden}
+  .timer-prog i{display:block;height:100%;background:var(--rust);border-radius:3px;transition:width .25s linear}
+  .timer-bar.done .timer-prog i{background:var(--patina)}
 </style>
 </head>
 <body>
@@ -249,6 +269,7 @@
   <a data-tab="trend" href="#"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M17 7h4v4"/></svg>推移</a>
 </nav>
 
+<div class="timer-bar" id="timerBar"></div>
 <div class="overlay" id="overlay"><div class="sheet" id="sheet"></div></div>
 
 <script>
@@ -700,6 +721,7 @@ function renderRecord(){
       ${noteHTML}
       <div class="colhead"><span>#</span><span>${esc(unit)}</span><span>回数</span><span>RIR</span><span>種別</span><span></span></div>
       ${setrows}
+      <button class="rest-btn" onclick="startRestTimer(${(en.hint&&en.hint.rest_sec)?en.hint.rest_sec:75},'${esc((ex?ex.name:'休憩')).replace(/'/g,'')}')">⏱ 休憩スタート（${(en.hint&&en.hint.rest_sec)?en.hint.rest_sec:75}秒）</button>
       <button class="addbtn" onclick="addSet(${ei})">＋ セット</button>
       <div class="ex-memo"><input type="text" data-e="${ei}" data-mf="1" value="${esc(en.memo||"")}" placeholder="メモ（例：スミス使用）"></div>
     </div>`;
@@ -1384,6 +1406,49 @@ function openPinpoint(){
   openSheet(h);
 }
 
+/* ============ 休憩タイマー ============ */
+let _timer=null,_audioCtx=null;
+function ensureAudio(){try{_audioCtx=_audioCtx||new (window.AudioContext||window.webkitAudioContext)();if(_audioCtx.state==="suspended")_audioCtx.resume();}catch(e){}}
+function beep(){try{ensureAudio();const c=_audioCtx;if(!c)return;
+  [0,1].forEach(i=>{const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+i*0.3;
+    o.type="sine";o.frequency.value=880;
+    g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.28,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.24);
+    o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+0.26);});}catch(e){}}
+function fmtClock(s){s=Math.max(0,Math.round(s));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0");}
+function renderTimerBar(){
+  const bar=document.getElementById("timerBar");if(!bar)return;
+  if(!_timer){bar.className="timer-bar";bar.innerHTML="";return;}
+  const rem=(_timer.endTime-Date.now())/1000,done=rem<=0;
+  const pct=done?100:Math.min(100,(1-rem/_timer.duration)*100);
+  bar.className="timer-bar show"+(done?" done":"");
+  bar.innerHTML=`<div class="timer-row">
+    <span class="timer-time">${done?"0:00":fmtClock(rem)}</span>
+    <span class="timer-lbl">${done?"休憩おわり！次のセットへ 💪":esc(_timer.label||"休憩中")}</span>
+    <span class="timer-btns">
+      ${done?"":`<button onclick="adjustTimer(-15)">−15</button><button onclick="adjustTimer(15)">+15</button>`}
+      <button class="skip" onclick="stopTimer()">${done?"閉じる":"スキップ"}</button>
+    </span></div>
+    <div class="timer-prog"><i style="width:${pct.toFixed(1)}%"></i></div>`;
+}
+function startRestTimer(sec,label){
+  sec=+sec||75;ensureAudio();
+  if(_timer&&_timer.iv)clearInterval(_timer.iv);
+  _timer={endTime:Date.now()+sec*1000,duration:sec,label:label||"休憩中",fired:false,iv:null};
+  _timer.iv=setInterval(tickTimer,250);renderTimerBar();
+}
+function tickTimer(){
+  if(!_timer)return;
+  const rem=(_timer.endTime-Date.now())/1000;
+  if(rem<=0&&!_timer.fired){_timer.fired=true;beep();if(navigator.vibrate)navigator.vibrate([140,70,140]);
+    const bar=document.getElementById("timerBar");if(bar)bar.classList.add("flash");
+    _timer.hideTO=setTimeout(()=>{if(_timer&&_timer.fired)stopTimer();},10000);}
+  renderTimerBar();
+}
+function adjustTimer(d){if(!_timer)return;_timer.endTime+=d*1000;_timer.duration=Math.max(5,_timer.duration+d);
+  if(_timer.fired&&(_timer.endTime-Date.now())>0){_timer.fired=false;if(_timer.hideTO)clearTimeout(_timer.hideTO);}
+  renderTimerBar();}
+function stopTimer(){if(_timer){if(_timer.iv)clearInterval(_timer.iv);if(_timer.hideTO)clearTimeout(_timer.hideTO);}_timer=null;renderTimerBar();}
+
 /* ============ タブ ============ */
 function switchTab(name){
   document.querySelectorAll("nav.tabs a").forEach(x=>x.classList.toggle("active",x.dataset.tab===name));
@@ -1613,7 +1678,7 @@ Object.assign(window,{STATE,switchTab,renderRecord,renderSplit,renderTplEditor,l
   addSet,rmSet,rmEntry,copySet,goRecord,addTemplate,openTemplateEditor,tplSet,tplMove,tplDel,saveTemplate,deleteTemplate,
   renderTrend,tryMethod,showHistory,openCoach,saveCoach,clearMeso,
   openConditioning,saveConditioning,delConditioning,condHint,buildBalancedDraft,
-  openPinpoint,togglePin,startSingle,buildTimedWorkout});
+  openPinpoint,togglePin,startSingle,buildTimedWorkout,startRestTimer,stopTimer,adjustTimer});
 </script>
 </body>
 </html>
