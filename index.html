@@ -125,7 +125,9 @@
   .ex-card{background:var(--surface);border:.5px solid var(--line);border-radius:14px;padding:13px 14px;margin-bottom:12px}
   .ex-card .exh{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
   .ex-card .exh .nm{font-size:15px;color:var(--text)}
-  .ex-card .hint{font-size:11px;color:var(--dim);font-family:var(--font-mono);margin:3px 0 9px}
+  .ex-card .hint{font-size:11px;color:var(--dim);font-family:var(--font-mono);margin:3px 0 6px}
+  .ex-card .rule{font-size:11px;color:var(--muted);background:var(--surface);border-radius:8px;padding:7px 9px;margin:0 0 9px;line-height:1.55}
+  .ex-card .rule b{color:var(--txt);font-weight:600}
   .colhead{display:grid;grid-template-columns:20px 1fr 1fr .8fr 1.3fr 22px;gap:6px;font-size:10px;color:var(--dim);margin-bottom:5px;padding:0 2px}
   .colhead span{text-align:center}.colhead span:first-child{text-align:left}
   .setrow{display:grid;grid-template-columns:20px 1fr 1fr .8fr 1.3fr 22px;gap:6px;align-items:center;margin-bottom:6px}
@@ -576,7 +578,7 @@ function renderSplit(){
   STATE.templates.forEach(t=>{
     const items=t.items.map(it=>{const ex=STATE.exMap[it.exercise_id];
       return `<div class="tpl-item"><span class="nm">${esc(ex?ex.name:it.exercise_id)}</span>
-        <span class="num" style="color:var(--dim)">${it.sets}×${it.rep_low}-${it.rep_high} · RIR${it.rir}</span></div>`;}).join("")
+        <span class="num" style="color:var(--dim)">${it.sets}セット×${it.rep_low}〜${it.rep_high}回 · RIR${it.rir}</span></div>`;}).join("")
       ||`<div class="tpl-item"><span class="nm" style="color:var(--dim)">種目なし</span></div>`;
     html+=`<div class="tpl-card">
       <div class="tpl-head"><h3>${esc(t.name)}</h3>
@@ -703,11 +705,14 @@ function renderRecord(){
   if(d._balance&&d._balance.length)html+=`<div class="msg info" style="display:block;margin-bottom:12px">バランス調整：${esc(d._balance.join("、"))}（充足部位を自動で間引き）</div>`;
   d.entries.forEach((en,ei)=>{
     const ex=STATE.exMap[en.exercise_id];const unit=ex?weightUnit(ex):"kg";
-    const hint=en.hint?`目安 ${en.hint.sets}×${en.hint.rep_low}-${en.hint.rep_high} · RIR${en.hint.rir} · 休${en.hint.rest_sec}s`:(ex?ex.loading_type:"");
+    const hasRange=en.hint&&en.hint.rep_low!=null&&en.hint.rep_high!=null;
+    const hint=en.hint?(hasRange?`目安 ${en.hint.sets}セット × ${en.hint.rep_low}〜${en.hint.rep_high}回　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`:`目安 ${en.hint.sets}セット　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`):(ex?ex.loading_type:"");
+    const canAuto=hasRange&&ex&&ex.loading_type!=="自重";
+    const ruleHTML=canAuto?`<div class="rule">🎯 各セット <b>${en.hint.rep_low}〜${en.hint.rep_high}回</b> がねらい（重すぎず軽すぎずの範囲）<br>⬆️ 全セットが <b>${en.hint.rep_high}回</b> に届いたら次回は重量アップ　⬇️ <b>${en.hint.rep_low}回</b> に届かないセットがあると次回は重量ダウン</div>`:"";
     const note=en._note;
     const noteHTML=note?(note.type==="up"
-      ?`<div class="note-badge up">🔺 前回目標達成 → ${fmtN(note.from)}kgから${fmtN(note.to)}kgに挑戦</div>`
-      :`<div class="note-badge down">🔻 前回rep未達 → ${fmtN(note.from)}kgから${fmtN(note.to)}kgに戻して仕切り直し</div>`):"";
+      ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成 → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg にアップして挑戦</div>`
+      :`<div class="note-badge down">🔻 前回は ${note.lo}回 に届かないセットがあった → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に戻して仕切り直し</div>`):"";
     const setrows=en.sets.map((s,si)=>`<div class="setrow">
       ${si===0?`<span class="sn">${si+1}</span>`:`<button class="sn copyable" onclick="copySet(${ei},${si})" title="直前セットをコピー">${si+1}</button>`}
       <input type="number" inputmode="decimal" step="0.5" data-e="${ei}" data-s="${si}" data-f="weight" value="${s.weight}" placeholder="${unit}">
@@ -718,6 +723,7 @@ function renderRecord(){
     html+=`<div class="ex-card">
       <div class="exh"><span class="nm">${esc(ex?ex.name:en.exercise_id)}</span><button class="ex-rm" onclick="rmEntry(${ei})">種目削除</button></div>
       <div class="hint">${esc(hint)}</div>
+      ${ruleHTML}
       ${noteHTML}
       <div class="colhead"><span>#</span><span>${esc(unit)}</span><span>回数</span><span>RIR</span><span>種別</span><span></span></div>
       ${setrows}
@@ -1160,8 +1166,8 @@ function smartSetsFor(exId,date,hintItem){
   if(ex&&ex.loading_type!=="自重"&&w0!=null&&w0!==""){
     const allHi=hi!=null&&last.every(s=>s.reps!=null&&s.reps!==""&&+s.reps>=hi);
     const anyLow=lo!=null&&last.some(s=>s.reps!=null&&s.reps!==""&&+s.reps<lo);
-    if(allHi){const nx=nextNotch(+w0);if(nx!=null){override=nx;note={type:"up",from:+w0,to:nx};}}
-    else if(anyLow){const pv=prevNotch(+w0);if(pv!=null){override=pv;note={type:"down",from:+w0,to:pv};}}
+    if(allHi){const nx=nextNotch(+w0);if(nx!=null){override=nx;note={type:"up",from:+w0,to:nx,hi};}}
+    else if(anyLow){const pv=prevNotch(+w0);if(pv!=null){override=pv;note={type:"down",from:+w0,to:pv,lo};}}
   }
   const sets=[];
   for(let i=0;i<n;i++){const src=last[i]||last[last.length-1];
