@@ -183,6 +183,7 @@
   .quick-card .qbtn:active{transform:scale(.95)}
   .auto-banner{background:rgba(61,139,255,.14);border-radius:10px;padding:10px 13px;font-size:13px;color:var(--rust-l);margin-bottom:12px;display:flex;flex-direction:column;gap:2px}
   .auto-banner span{font-size:11px;color:var(--muted)}
+  .rollnote{font-size:11px;color:var(--muted);background:var(--surface);border-radius:8px;padding:8px 11px;margin:0 0 12px;line-height:1.55}
   .today-card .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:500}
   .today-card .go:active{transform:scale(.98)}
   .need-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
@@ -467,7 +468,19 @@ function mondayOf(d){const x=new Date(d);const day=(x.getDay()+6)%7;x.setHours(0
 function fmtMD(d){return String(d.getMonth()+1).padStart(2,"0")+"/"+String(d.getDate()).padStart(2,"0");}
 function isoDate(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");}
 function latestLogDate(){let mx=null;STATE.logs.forEach(l=>{if(!mx||l.date>mx)mx=l.date;});return mx?new Date(mx+"T00:00:00"):new Date();}
-function currentWeekStart(){const base=mondayOf(latestLogDate());base.setDate(base.getDate()+STATE.weekOffset*7);return base;}
+function currentWeekStart(){
+  // offset0 は「今日を含む直近7日」のローリング窓（月曜で急にリセットしない）。過去は暦週(月〜日)で振り返り。
+  if(STATE.weekOffset===0){const s=new Date();s.setHours(0,0,0,0);s.setDate(s.getDate()-6);return s;}
+  const base=mondayOf(new Date());base.setDate(base.getDate()+STATE.weekOffset*7);return base;
+}
+// 直前に行ったセッション（最新の記録日）の種目/主働部位。おすすめの重複を避けるのに使う。
+function lastSessionInfo(){
+  let latest=null;STATE.logs.forEach(l=>{if(!latest||l.date>latest)latest=l.date;});
+  const exs=new Set(),muscles=new Set();
+  if(latest)STATE.logs.forEach(l=>{if(l.date!==latest)return;exs.add(l.exercise_id);
+    const x=STATE.exMap[l.exercise_id];if(x)x.muscle_tags.forEach(t=>{if(t.role==="primary")muscles.add(t.tag);});});
+  return {date:latest,exs,muscles};
+}
 
 /* ============ 集計 ============ */
 function aggregateWeek(weekStart){
@@ -514,8 +527,8 @@ function renderAnalysis(){
     return;
   }
   const ws=currentWeekStart();const we=new Date(ws.getTime()+6*864e5);
-  document.getElementById("wkLabel").textContent="MON "+fmtMD(ws)+" – SUN "+fmtMD(we);
-  const info=computeWeekInfo(ws);
+  document.getElementById("wkLabel").textContent=STATE.weekOffset===0?`直近7日 ${fmtMD(ws)}–${fmtMD(we)}`:`MON ${fmtMD(ws)} – SUN ${fmtMD(we)}`;
+  const info=computeWeekInfo(STATE.weekOffset===0?mondayOf(new Date()):ws);
   document.getElementById("wkPhase").textContent=info?(info.is_deload?`デロード W${info.num}/${info.length}`:`蓄積期 W${info.num}/${info.length}`):"";
   const factor=info&&info.is_deload?0.45:1;
   const nextDisabled=STATE.weekOffset>=0;document.getElementById("wkNext").disabled=nextDisabled;
@@ -528,7 +541,8 @@ function renderAnalysis(){
     <div class="stat"><div class="k">種目</div><div class="v">${A.exCount}</div></div>
     <div class="stat"><div class="k">セッション</div><div class="v">${A.sessCount}</div></div>
   </div></div>`;
-  if(A.setCount===0)html+=`<div class="msg info" style="display:block">この週の記録はありません。‹ › で週を移動できます。</div>`;
+  if(STATE.weekOffset===0)html+=`<div class="rollnote">📊 直近7日ぶんを常に集計中。月曜でゼロに戻らず、やった分は7日かけてゆっくり減るだけ。‹ で過去の週を振り返れます。</div>`;
+  if(A.setCount===0)html+=`<div class="msg info" style="display:block">${STATE.weekOffset===0?"直近7日の記録がまだありません。":"この週の記録はありません。"}‹ › で週を移動できます。</div>`;
   for(const g in MUSCLE_GROUP){
     html+=`<div class="group-head"><h3>${g}</h3></div>`;
     MUSCLE_GROUP[g].forEach(m=>{html+=barRow(m,A.totals[m],STATE.targets[m],factor);});
@@ -1347,17 +1361,21 @@ function buildTimedWorkout(minutes){
   const date=todayISO();
   const def=deficitMap(),cur=weeklyNow();
   const inTpl=new Set();STATE.templates.forEach(t=>t.items.forEach(it=>inTpl.add(it.exercise_id)));
-  // 手薄な部位順（不足がなければ「今週まだ少ない部位」順）にランク付け
-  let ranked=MUSCLES.filter(m=>(def[m]||0)>0).sort((a,b)=>(def[b]||0)-(def[a]||0));
+  const prev=lastSessionInfo();
+  // 手薄な部位順にランク付け。ただし前回セッションで叩いた部位は不足量を割り引いて後回しに（不足が突出していれば残る）。
+  const rankVal=m=>(def[m]||0)*(prev.muscles.has(m)?0.5:1);
+  let ranked=MUSCLES.filter(m=>(def[m]||0)>0).sort((a,b)=>rankVal(b)-rankVal(a));
   const noDeficit=ranked.length===0;
-  if(noDeficit)ranked=MUSCLES.slice().sort((a,b)=>(cur[a]||0)-(cur[b]||0));
+  // 不足ゼロなら「今週まだ少ない部位」順。前回叩いた部位は最後尾に寄せる。
+  if(noDeficit)ranked=MUSCLES.slice().sort((a,b)=>((cur[a]||0)+(prev.muscles.has(a)?999:0))-((cur[b]||0)+(prev.muscles.has(b)?999:0)));
   const budget=minutes>0?minutes*60:Infinity;
   const maxEx=minutes>0?12:7;
   const usedEx=new Set(),usedMuscle=new Set(),chosen=[];let spent=0;
   const bestExFor=m=>{
     const cands=STATE.ex.filter(x=>x.is_active&&!usedEx.has(x.id)&&x.muscle_tags.some(t=>t.tag===m&&t.role==="primary"));
     if(!cands.length)return null;
-    cands.sort((a,b)=>(inTpl.has(b.id)-inTpl.has(a.id))||a.name.localeCompare(b.name,"ja"));
+    // 前回やった種目は後回し→同部位でも別種目に入れ替わる。次にテンプレ収録優先、最後に五十音順。
+    cands.sort((a,b)=>(prev.exs.has(a.id)-prev.exs.has(b.id))||(inTpl.has(b.id)-inTpl.has(a.id))||a.name.localeCompare(b.name,"ja"));
     return cands[0];
   };
   for(const m of ranked){
