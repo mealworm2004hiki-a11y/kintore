@@ -283,11 +283,15 @@ const MUSCLE_GROUP = {
   "上半身・引く/肩":["広背筋","僧帽筋/背中厚み","サイドデルト","リアデルト","二頭筋"],
   "下半身・体幹":["大腿四頭筋","ハムストリング","臀筋","カーフ","腹筋"]
 };
+// トム・ホランド系「絞れた美・Vライン」ターゲット(2026-09-09改訂 target_seed_ver=1)。
+// 各値=[mev, mav_low, mav_high, mrv]（週セット数）。おすすめは mav_low を床に不足を埋める。
+// 方針: 上部胸を主役級に引き上げ(以前は7で即満タン→勧められず)、広背でV幅、腹筋も可視化のため確保。
+// 肩は美の要なので高めキープしつつ側/後は少し抑えて胸・背が埋もれないよう再配分。脚と二頭は上半身寄せで微減。
 const SEED_TARGETS = {
-  "上部胸":[5,7,11,12],"下部胸":[5,6,10,11],"サイドデルト":[8,16,22,26],"リアデルト":[6,12,18,22],
-  "フロントデルト":[0,null,null,12],"広背筋":[6,10,16,18],"僧帽筋/背中厚み":[4,8,14,18],
-  "二頭筋":[7,14,20,26],"三頭筋":[7,10,14,18],"大腿四頭筋":[8,12,18,20],"ハムストリング":[6,10,16,20],
-  "臀筋":[0,4,12,16],"カーフ":[8,12,16,20],"腹筋":[0,10,16,20]
+  "上部胸":[6,12,16,18],"下部胸":[5,8,12,14],"サイドデルト":[8,14,20,24],"リアデルト":[6,10,16,20],
+  "フロントデルト":[0,null,null,12],"広背筋":[6,12,18,20],"僧帽筋/背中厚み":[4,8,14,18],
+  "二頭筋":[6,11,16,20],"三頭筋":[7,11,15,18],"大腿四頭筋":[8,10,16,20],"ハムストリング":[6,8,14,18],
+  "臀筋":[0,4,10,14],"カーフ":[8,10,14,18],"腹筋":[0,12,18,22]
 };
 /* e(name, region, active, loading, [primary...], [secondary...], review?) */
 function e(name,region,active,loading,pri,sec,review){
@@ -368,6 +372,7 @@ const BODYPART_FALLBACK={"胸":"胸（未分類）","肩":"肩（未分類）","
 /* テンプレ項目 ti(種目名,セット,rep下,rep上,RIR,休憩秒) */
 function ti(name,sets,lo,hi,rir,rest){return {exercise_id:"ex_"+name,sets,rep_low:lo,rep_high:hi,rir,rest_sec:rest};}
 const TPL_SEED_VER=7;
+const TARGET_SEED_VER=1;
 const DEFAULT_LADDER=[3,5,7,9,12,14,16,18,21,23,25,27,30,32,35,37,40,42];
 const SEED_TEMPLATES=[
   {id:"tpl_upperA",name:"Upper A（強さ寄り）",split_key:"upperA",order:0,items:[
@@ -426,8 +431,13 @@ function del(store,id){return new Promise((res,rej)=>{const r=tx(store,"readwrit
 async function seedIfEmpty(){
   const ex=await getAll("exercises");
   if(ex.length===0){await bulkPut("exercises",SEED_EXERCISES);}
+  const seedTargets=()=>bulkPut("targets",MUSCLES.map(m=>({id:m,muscle_tag:m,mev:SEED_TARGETS[m][0],mav_low:SEED_TARGETS[m][1],mav_high:SEED_TARGETS[m][2],mrv:SEED_TARGETS[m][3]})));
   const tg=await getAll("targets");
-  if(tg.length===0){await bulkPut("targets",MUSCLES.map(m=>({id:m,muscle_tag:m,mev:SEED_TARGETS[m][0],mav_low:SEED_TARGETS[m][1],mav_high:SEED_TARGETS[m][2],mrv:SEED_TARGETS[m][3]})));}
+  if(tg.length===0){await seedTargets();await put("meta",{id:"target_seed_ver",v:TARGET_SEED_VER});}
+  else{
+    const tver=(await getOne("meta","target_seed_ver"))||{v:0};
+    if((tver.v||0)<TARGET_SEED_VER){await seedTargets();await put("meta",{id:"target_seed_ver",v:TARGET_SEED_VER});}
+  }
   const tp=await getAll("templates");
   if(tp.length===0){
     await bulkPut("templates",SEED_TEMPLATES.map(t=>({...t,items:t.items.map(i=>({...i}))})));
