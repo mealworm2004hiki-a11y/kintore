@@ -184,6 +184,14 @@
   .auto-banner{background:rgba(61,139,255,.14);border-radius:10px;padding:10px 13px;font-size:13px;color:var(--rust-l);margin-bottom:12px;display:flex;flex-direction:column;gap:2px}
   .auto-banner span{font-size:11px;color:var(--muted)}
   .rollnote{font-size:11px;color:var(--muted);background:var(--surface);border-radius:8px;padding:8px 11px;margin:0 0 12px;line-height:1.55}
+  .stretch-badge{font-size:10px;color:var(--patina);background:rgba(79,128,114,.18);border-radius:6px;padding:2px 6px;margin-left:8px;white-space:nowrap;font-weight:600}
+  .rir-tip{font-size:12px;background:var(--surface);border-radius:10px;padding:2px 13px;margin-bottom:14px;color:var(--muted)}
+  .rir-tip summary{cursor:pointer;padding:9px 0;color:var(--text);font-size:13px;list-style:none}
+  .rir-tip summary::-webkit-details-marker{display:none}
+  .rir-tip summary::before{content:"▸ ";color:var(--dim)}
+  .rir-tip[open] summary::before{content:"▾ "}
+  .rir-tip>div{padding:0 0 11px;line-height:1.7}
+  .rir-tip b{color:var(--text)}
   .today-card .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:500}
   .today-card .go:active{transform:scale(.98)}
   .need-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
@@ -293,12 +301,15 @@ const SEED_TARGETS = {
   "二頭筋":[6,11,16,20],"三頭筋":[7,11,15,18],"大腿四頭筋":[8,10,16,20],"ハムストリング":[6,8,14,18],
   "臀筋":[0,4,10,14],"カーフ":[8,10,14,18],"腹筋":[0,12,18,22]
 };
+// ストレッチ(伸長)位で負荷がかかる種目。近年のエビデンス(Wolf2023/Maeo2023/Kassiano)で肥大に有望。
+// おすすめ生成時に各部位でこれを優先し、記録画面にバッジ表示する。
+const STRETCH_NAMES=new Set(["ダンベルフライ","ダンベルプルオーバー","インクラインダンベルカール","フレンチプレス","ダンベルルーマニアンデッドリフト","ブルガリアンスクワット","カーフレイズ"]);
 /* e(name, region, active, loading, [primary...], [secondary...], review?) */
 function e(name,region,active,loading,pri,sec,review){
   const tags=[];
   (pri||[]).forEach(t=>tags.push({tag:t,role:"primary"}));
   (sec||[]).forEach(t=>tags.push({tag:t,role:"secondary"}));
-  return {id:"ex_"+name,name,body_region:region,muscle_tags:tags,is_active:active,loading_type:loading,review:!!review};
+  return {id:"ex_"+name,name,body_region:region,muscle_tags:tags,is_active:active,loading_type:loading,review:!!review,is_stretch:STRETCH_NAMES.has(name)};
 }
 const DB_DUMBBELL="両手ダンベル",SINGLE="単一ダンベル",BW="自重",BWX="自重＋加重";
 const SEED_EXERCISES=[
@@ -409,7 +420,7 @@ const SEED_TEMPLATES=[
     ti("ダンベルスクワット",3,10,12,1,120),ti("ダンベルヒップスラスト",3,10,15,1,90),
     ti("カーフレイズ",4,12,15,0,60),ti("アブローラー",3,8,12,1,60)]}
 ];
-const SETTYPE_LABEL={"normal":"通常","myo-rep":"ミオ","drop":"ドロップ","partial":"部分","tempo":"テンポ"};
+const SETTYPE_LABEL={"normal":"通常","warmup":"W準備","myo-rep":"ミオ","drop":"ドロップ","partial":"部分","tempo":"テンポ"};
 const METHODS=["ダブルプログレッション（reps範囲を広げる）","伸展位パーシャル","テンポ操作（エキセン3-5秒＋ストレッチ1-2秒ポーズ）","Myo-reps／ドロップセット","メカニカルドロップセット","バンド併用","片手集中負荷"];
 const RANKS=[{min:0,name:"見習い"},{min:200,name:"ブロンズ"},{min:500,name:"シルバー"},{min:1000,name:"ゴールド"},{min:2000,name:"プラチナ"},{min:4000,name:"レジェンド"}];
 function bucketOf(reps){reps=+reps;if(!reps)return null;return reps<=8?"5-8":reps<=12?"9-12":reps<=15?"13-15":"16+";}
@@ -458,6 +469,7 @@ async function seedIfEmpty(){
 let STATE={ex:[],exMap:{},targets:{},logs:[],templates:[],draft:null,weekOffset:0,tab:"analysis"};
 async function loadState(){
   STATE.ex=await getAll("exercises");
+  STATE.ex.forEach(x=>{x.is_stretch=STRETCH_NAMES.has(x.name);}); // DB由来の古いレコードにも名前から補完
   STATE.exMap={};STATE.ex.forEach(x=>STATE.exMap[x.id]=x);
   STATE.exMap._byName={};STATE.ex.forEach(x=>STATE.exMap._byName[x.name]=x);
   const tg=await getAll("targets");STATE.targets={};tg.forEach(t=>STATE.targets[t.muscle_tag]=t);
@@ -499,6 +511,7 @@ function aggregateWeek(weekStart){
   let setCount=0,exSet=new Set(),sessSet=new Set();
   STATE.logs.forEach(l=>{
     if(l.date<ws||l.date>we)return;
+    if(l.set_type==="warmup")return; // ウォームアップは週ボリュームに数えない(エビデンス準拠)
     setCount++;exSet.add(l.exercise_id);sessSet.add(l.session_id);
     const x=STATE.exMap[l.exercise_id];
     const tags=x?x.muscle_tags:[{tag:l._fallback||"未分類",role:"primary"}];
@@ -680,7 +693,8 @@ function bindPicker(inputId,addFn){
 function todayISO(){return isoDate(new Date());}
 function weightUnit(ex){return ex.loading_type==="両手ダンベル"?"kg/手":ex.loading_type==="単一ダンベル"?"kg":"+kg";}
 function lastRecordFor(exId,beforeDate){
-  const rows=STATE.logs.filter(l=>l.exercise_id===exId&&(!beforeDate||l.date<beforeDate));
+  // ウォームアップは除外(前回実績の引き継ぎ・自動増減の判定にワークセットだけ使う)
+  const rows=STATE.logs.filter(l=>l.exercise_id===exId&&l.set_type!=="warmup"&&(!beforeDate||l.date<beforeDate));
   if(!rows.length)return null;
   let mx=null;rows.forEach(r=>{if(!mx||r.date>mx)mx=r.date;});
   return rows.filter(r=>r.date===mx).sort((a,b)=>(a.set_number||0)-(b.set_number||0))
@@ -727,6 +741,10 @@ function renderRecord(){
     <input type="date" value="${d.date}" oninput="STATE.draft.date=this.value"></div>`;
   if(d._auto)html+=`<div class="auto-banner">⏱ ${esc(d._auto.label)}メニュー・約${d._auto.estMin}分／${d._auto.count}種目<span>${d._auto.noDeficit?"今週は目標達成ぎみ→まんべんなく":"今週手薄な部位を優先"}</span></div>`;
   if(d._balance&&d._balance.length)html+=`<div class="msg info" style="display:block;margin-bottom:12px">バランス調整：${esc(d._balance.join("、"))}（充足部位を自動で間引き）</div>`;
+  html+=`<details class="rir-tip"><summary>💪 追い込みの目安（RIR）</summary>
+    <div>各セットは <b>1〜3回残す</b>（RIR1〜3）のが基本。<b>最後の1セットだけ</b>限界近く（RIR0〜1）まで。<br>
+    毎セット限界まで追い込む上乗せ効果はごくわずかで、回復・関節の負担が増えるだけ（Refalo 2023）。<br>
+    <b>ベンチ系など潰れると危ない種目は、安全のため限界まで行かない</b>（コントロールして下ろせる重さに）。</div></details>`;
   d.entries.forEach((en,ei)=>{
     const ex=STATE.exMap[en.exercise_id];const unit=ex?weightUnit(ex):"kg";
     const hasRange=en.hint&&en.hint.rep_low!=null&&en.hint.rep_high!=null;
@@ -745,7 +763,7 @@ function renderRecord(){
       <select data-e="${ei}" data-s="${si}" data-f="set_type">${Object.keys(SETTYPE_LABEL).map(k=>`<option value="${k}" ${s.set_type===k?"selected":""}>${SETTYPE_LABEL[k]}</option>`).join("")}</select>
       <button class="rm" onclick="rmSet(${ei},${si})">×</button></div>`).join("");
     html+=`<div class="ex-card">
-      <div class="exh"><span class="nm">${esc(ex?ex.name:en.exercise_id)}</span><button class="ex-rm" onclick="rmEntry(${ei})">種目削除</button></div>
+      <div class="exh"><span class="nm">${esc(ex?ex.name:en.exercise_id)}${ex&&ex.is_stretch?`<span class="stretch-badge" title="伸長位で負荷がかかる種目。肥大に有望">🫧 ストレッチ</span>`:""}</span><button class="ex-rm" onclick="rmEntry(${ei})">種目削除</button></div>
       <div class="hint">${esc(hint)}</div>
       ${ruleHTML}
       ${noteHTML}
@@ -920,8 +938,16 @@ async function clearMeso(){STATE.meso=null;await del("meta","mesocycle");await l
 
 /* ============ 進捗グラフ ============ */
 function exerciseWeightSeries(exId){
-  const bySess={};STATE.logs.forEach(l=>{if(l.exercise_id!==exId||l.weight_kg==null)return;const k=l.session_id;
+  const bySess={};STATE.logs.forEach(l=>{if(l.exercise_id!==exId||l.weight_kg==null||l.set_type==="warmup")return;const k=l.session_id;
     if(!bySess[k]||l.weight_kg>bySess[k].value)bySess[k]={date:l.date,value:l.weight_kg};});
+  return Object.values(bySess).sort((a,b)=>a.date<b.date?-1:1).slice(-40);
+}
+// 推定1RM: Brzycki(≤10repで高精度)、それ以上はEpley。両式はrep10で連続。
+function e1rm(w,r){w=+w;r=+r;if(!(w>0)||!(r>0))return null;if(r===1)return w;return r<=10?w*36/(37-r):w*(1+r/30);}
+function exerciseE1rmSeries(exId){
+  const bySess={};STATE.logs.forEach(l=>{if(l.exercise_id!==exId||l.set_type==="warmup")return;
+    const v=e1rm(l.weight_kg,l.reps);if(v==null)return;const k=l.session_id;
+    if(!bySess[k]||v>bySess[k].value)bySess[k]={date:l.date,value:Math.round(v*10)/10};});
   return Object.values(bySess).sort((a,b)=>a.date<b.date?-1:1).slice(-40);
 }
 function muscleVolumeSeries(m,weeks){
@@ -992,6 +1018,7 @@ function renderTrend(){
   let html=`<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <button class="toggle ${mode==='overall'?'on':''}" onclick="STATE.trendMode='overall';renderTrend()">総合</button>
     <button class="toggle ${mode==='exercise'?'on':''}" onclick="STATE.trendMode='exercise';renderTrend()">種目別（重量）</button>
+    <button class="toggle ${mode==='e1rm'?'on':''}" onclick="STATE.trendMode='e1rm';renderTrend()">種目別（推定1RM）</button>
     <button class="toggle ${mode==='muscle'?'on':''}" onclick="STATE.trendMode='muscle';renderTrend()">筋肉別（量）</button></div>`;
   if(mode==="overall"){
     const weeks=14;
@@ -1009,6 +1036,16 @@ function renderTrend(){
     const series=exerciseWeightSeries(cur),pl=(STATE.plateaus||[]).find(p=>p.exercise_id===cur);
     html+=`<div class="section-label">セッション最大重量の推移（kg）</div>`+chartSVG(series,{color:"var(--rust)",vlineDate:pl?pl.stallStart:null,vlineText:"停滞開始"});
     if(pl)html+=coachCardFor(pl);
+  }else if(mode==="e1rm"){
+    const exs=[...new Set(STATE.logs.filter(l=>l.set_type!=="warmup"&&e1rm(l.weight_kg,l.reps)!=null).map(l=>l.exercise_id))]
+      .map(id=>STATE.exMap[id]).filter(Boolean).sort((a,b)=>(b.is_active-a.is_active)||a.name.localeCompare(b.name,"ja"));
+    if(!exs.length){html+=`<div class="msg info" style="display:block">推定1RMは重量×回数の記録から計算します。ダンベル/加重種目の記録がたまると表示されます（自重のみだと出ません）。</div>`;view.innerHTML=html;return;}
+    let cur=STATE.trendE1rm&&exs.find(e=>e.id===STATE.trendE1rm)?STATE.trendE1rm:exs[0].id;STATE.trendE1rm=cur;
+    html+=`<select onchange="STATE.trendE1rm=this.value;renderTrend()" style="margin:14px 0;font-family:var(--font-body)">${exs.map(e=>`<option value="${esc(e.id)}" ${e.id===cur?'selected':''}>${esc(e.name)}${e.is_active?'':'（休眠）'}</option>`).join("")}</select>`;
+    const series=exerciseE1rmSeries(cur);
+    const best=series.length?Math.max(...series.map(p=>p.value)):null;
+    html+=`<div class="section-label">推定1RM（e1RM）の推移（kg）</div>`+chartSVG(series,{color:"var(--amber)"});
+    html+=`<div class="msg info" style="display:block">重量×回数から推定した挙上上限。同じ重さでも回数が伸びれば上がるので、増量前の伸びも見える指標です。${best!=null?`　直近ベスト <b>${fmtN(best)}kg</b>`:""}<br><span style="color:var(--dim)">計算式: Brzycki(10回以下)/Epley。回数が少ないほど精度が高い。ウォームアップは除外。</span></div>`;
   }else{
     let cur=STATE.trendMuscle||"サイドデルト";STATE.trendMuscle=cur;
     html+=`<select onchange="STATE.trendMuscle=this.value;renderTrend()" style="margin-bottom:14px;font-family:var(--font-body)">${MUSCLES.map(m=>`<option value="${esc(m)}" ${m===cur?'selected':''}>${esc(m)}</option>`).join("")}</select>`;
@@ -1206,7 +1243,7 @@ function progressionCues(){
   const maxDate=isoDate(latestLogDate()),out=[],sessById={};
   (STATE.sessions||[]).forEach(s=>sessById[s.id]=s);
   STATE.ex.forEach(ex=>{if(!ex.is_active||ex.loading_type==="自重")return;
-    const rows=STATE.logs.filter(l=>l.exercise_id===ex.id&&l.weight_kg!=null&&l.reps!=null);
+    const rows=STATE.logs.filter(l=>l.exercise_id===ex.id&&l.set_type!=="warmup"&&l.weight_kg!=null&&l.reps!=null);
     if(!rows.length)return;let md=null;rows.forEach(r=>{if(!md||r.date>md)md=r.date;});
     if(daysBetween(md,maxDate)>30)return;
     const sess=rows.filter(r=>r.date===md);
@@ -1384,8 +1421,8 @@ function buildTimedWorkout(minutes){
   const bestExFor=m=>{
     const cands=STATE.ex.filter(x=>x.is_active&&!usedEx.has(x.id)&&x.muscle_tags.some(t=>t.tag===m&&t.role==="primary"));
     if(!cands.length)return null;
-    // 前回やった種目は後回し→同部位でも別種目に入れ替わる。次にテンプレ収録優先、最後に五十音順。
-    cands.sort((a,b)=>(prev.exs.has(a.id)-prev.exs.has(b.id))||(inTpl.has(b.id)-inTpl.has(a.id))||a.name.localeCompare(b.name,"ja"));
+    // 前回やった種目は後回し→同部位でも別種目に入替。次にストレッチ種目優先(伸長位・肥大に有望)、テンプレ収録優先、五十音順。
+    cands.sort((a,b)=>(prev.exs.has(a.id)-prev.exs.has(b.id))||((b.is_stretch?1:0)-(a.is_stretch?1:0))||(inTpl.has(b.id)-inTpl.has(a.id))||a.name.localeCompare(b.name,"ja"));
     return cands[0];
   };
   for(const m of ranked){
