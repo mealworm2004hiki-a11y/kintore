@@ -700,6 +700,14 @@ function lastRecordFor(exId,beforeDate){
   return rows.filter(r=>r.date===mx).sort((a,b)=>(a.set_number||0)-(b.set_number||0))
     .map(r=>({weight:r.weight_kg,reps:r.reps,rir:r.rir}));
 }
+// 直近n回のワークセッション(新しい順)。各要素はそのセッションのワークセット配列。減量の2連続判定に使う。
+function recentWorkSessions(exId,beforeDate,n){
+  const rows=STATE.logs.filter(l=>l.exercise_id===exId&&l.set_type!=="warmup"&&(!beforeDate||l.date<beforeDate));
+  if(!rows.length)return [];
+  const dates=[...new Set(rows.map(r=>r.date))].sort((a,b)=>a<b?1:-1).slice(0,n);
+  return dates.map(d=>rows.filter(r=>r.date===d).sort((a,b)=>(a.set_number||0)-(b.set_number||0))
+    .map(r=>({weight:r.weight_kg,reps:r.reps,rir:r.rir})));
+}
 function goRecord(tid){startFromTemplate(tid);switchTab("record");}
 function startFromTemplate(tid){
   const t=STATE.templates.find(x=>x.id===tid);const date=(STATE.draft&&STATE.draft.date)||todayISO();
@@ -750,11 +758,11 @@ function renderRecord(){
     const hasRange=en.hint&&en.hint.rep_low!=null&&en.hint.rep_high!=null;
     const hint=en.hint?(hasRange?`目安 ${en.hint.sets}セット × ${en.hint.rep_low}〜${en.hint.rep_high}回　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`:`目安 ${en.hint.sets}セット　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`):(ex?ex.loading_type:"");
     const canAuto=hasRange&&ex&&ex.loading_type!=="自重";
-    const ruleHTML=canAuto?`<div class="rule">🎯 各セット <b>${en.hint.rep_low}〜${en.hint.rep_high}回</b> がねらい（重すぎず軽すぎずの範囲）<br>⬆️ 全セットが <b>${en.hint.rep_high}回</b> に届いたら次回は重量アップ　⬇️ <b>${en.hint.rep_low}回</b> に届かないセットがあると次回は重量ダウン</div>`:"";
+    const ruleHTML=canAuto?`<div class="rule">🎯 各セット <b>${en.hint.rep_low}〜${en.hint.rep_high}回</b> がねらい（重すぎず軽すぎずの範囲）<br>⬆️ 全セットが <b>${en.hint.rep_high}回</b> に届いたら次回は重量アップ　⬇️ <b>${en.hint.rep_low}回</b> に届かないセットが<b>2回連続</b>で出たら重量ダウン（1回だけなら据え置き）</div>`:"";
     const note=en._note;
     const noteHTML=note?(note.type==="up"
       ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成 → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg にアップして挑戦</div>`
-      :`<div class="note-badge down">🔻 前回は ${note.lo}回 に届かないセットがあった → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に戻して仕切り直し</div>`):"";
+      :`<div class="note-badge down">🔻 2回連続で ${note.lo}回 に届かないセットがあった → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に戻して仕切り直し</div>`):"";
     const setrows=en.sets.map((s,si)=>`<div class="setrow">
       ${si===0?`<span class="sn">${si+1}</span>`:`<button class="sn copyable" onclick="copySet(${ei},${si})" title="直前セットをコピー">${si+1}</button>`}
       <input type="number" inputmode="decimal" step="0.5" data-e="${ei}" data-s="${si}" data-f="weight" value="${s.weight}" placeholder="${unit}">
@@ -1225,10 +1233,13 @@ function smartSetsFor(exId,date,hintItem){
   const w0=last[0]?last[0].weight:null;
   let note=null,override=null;
   if(ex&&ex.loading_type!=="自重"&&w0!=null&&w0!==""){
+    const anyLowIn=arr=>lo!=null&&arr&&arr.some(s=>s.reps!=null&&s.reps!==""&&+s.reps<lo);
     const allHi=hi!=null&&last.every(s=>s.reps!=null&&s.reps!==""&&+s.reps>=hi);
-    const anyLow=lo!=null&&last.some(s=>s.reps!=null&&s.reps!==""&&+s.reps<lo);
+    // 減量は「直近2セッション連続で下限割れ」のときだけ。増量直後は前回が下限割れでない(上限達成)ので自動的に猶予が入り、上げ下げの振動を防ぐ。
+    const sess2=recentWorkSessions(exId,date,2);
+    const twoLow=anyLowIn(sess2[0])&&anyLowIn(sess2[1]);
     if(allHi){const nx=nextNotch(+w0);if(nx!=null){override=nx;note={type:"up",from:+w0,to:nx,hi};}}
-    else if(anyLow){const pv=prevNotch(+w0);if(pv!=null){override=pv;note={type:"down",from:+w0,to:pv,lo};}}
+    else if(twoLow){const pv=prevNotch(+w0);if(pv!=null){override=pv;note={type:"down",from:+w0,to:pv,lo};}}
   }
   const sets=[];
   for(let i=0;i<n;i++){const src=last[i]||last[last.length-1];
