@@ -1,4 +1,4 @@
-const CACHE="kintore-v21";
+const CACHE="kintore-v22";
 const ASSETS=["./","./index.html","./manifest.webmanifest","./icon.svg"];
 self.addEventListener("install",e=>{
   e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));

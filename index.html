@@ -758,10 +758,13 @@ function renderRecord(){
     const hasRange=en.hint&&en.hint.rep_low!=null&&en.hint.rep_high!=null;
     const hint=en.hint?(hasRange?`目安 ${en.hint.sets}セット × ${en.hint.rep_low}〜${en.hint.rep_high}回　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`:`目安 ${en.hint.sets}セット　RIR${en.hint.rir}・休${en.hint.rest_sec}秒`):(ex?ex.loading_type:"");
     const canAuto=hasRange&&ex&&ex.loading_type!=="自重";
-    const ruleHTML=canAuto?`<div class="rule">🎯 各セット <b>${en.hint.rep_low}〜${en.hint.rep_high}回</b> がねらい（重すぎず軽すぎずの範囲）<br>⬆️ 全セットが <b>${en.hint.rep_high}回</b> に届いたら次回は重量アップ　⬇️ <b>${en.hint.rep_low}回</b> に届かないセットが<b>2回連続</b>で出たら重量ダウン（1回だけなら据え置き）</div>`:"";
+    const ruleHTML=canAuto?`<div class="rule">🎯 各セット <b>${en.hint.rep_low}〜${en.hint.rep_high}回</b> がねらい（重すぎず軽すぎずの範囲）<br>⬆️ 全セットが <b>${en.hint.rep_high}回</b> に届いたら次回は重量アップ（次の刻みが遠い軽量種目は、まずセット追加で前進）　⬇️ <b>${en.hint.rep_low}回</b> に届かないセットが<b>2回連続</b>で出たら重量ダウン（1回だけなら据え置き）</div>`:"";
     const note=en._note;
-    const noteHTML=note?(note.type==="up"
-      ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成 → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg にアップして挑戦</div>`
+    const noteHTML=note?(
+      note.type==="up"
+      ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成 → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg にアップして挑戦${note.fromSets?`（セットは${note.fromSets}→${en.sets.length}本に戻す）`:""}</div>`
+      :note.type==="addset"
+      ?`<div class="note-badge up">➕ 全セット上限達成！ただし次の重量 ${fmtN(note.next)}kg は刻みが大きすぎるので、今回は同じ ${fmtN(note.weight)}kg で <b>${note.to}セット目</b>を追加してボリュームで前進。上限を続けたら次に重量アップします</div>`
       :`<div class="note-badge down">🔻 2回連続で ${note.lo}回 に届かないセットがあった → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に戻して仕切り直し</div>`):"";
     const setrows=en.sets.map((s,si)=>`<div class="setrow">
       ${si===0?`<span class="sn">${si+1}</span>`:`<button class="sn copyable" onclick="copySet(${ei},${si})" title="直前セットをコピー">${si+1}</button>`}
@@ -1225,27 +1228,43 @@ function buildBalancedDraft(tid){
 }
 function nextNotch(w){const L=(STATE.settings&&STATE.settings.dbLadder)||DEFAULT_LADDER;for(const x of L){if(x>w)return x;}return null;}
 function prevNotch(w){const L=(STATE.settings&&STATE.settings.dbLadder)||DEFAULT_LADDER;let p=null;for(const x of L){if(x<w)p=x;else break;}return p;}
+const NOTCH_FAR=0.15;   // 次の刻みが+15%超なら「遠い」→重量でなくセットで前進
+const BRIDGE_MAX_ADD=2; // ボリューム橋渡しで足せる最大セット数(baseline+2まで)
 function smartSetsFor(exId,date,hintItem){
   const ex=STATE.exMap[exId];const last=lastRecordFor(exId,date);
-  const n=Math.max(1,(hintItem&&hintItem.sets)||(last?last.length:1)||1);
-  if(!last){const sets=[];for(let i=0;i<n;i++)sets.push({weight:"",reps:"",rir:hintItem?hintItem.rir:"",set_type:"normal"});return{sets,note:null};}
+  const baseSets=Math.max(1,(hintItem&&hintItem.sets)||(last?last.length:1)||1);
+  if(!last){const sets=[];for(let i=0;i<baseSets;i++)sets.push({weight:"",reps:"",rir:hintItem?hintItem.rir:"",set_type:"normal"});return{sets,note:null};}
   const hi=hintItem?hintItem.rep_high:null,lo=hintItem?hintItem.rep_low:null;
   const w0=last[0]?last[0].weight:null;
-  let note=null,override=null;
+  const hintRir=hintItem?hintItem.rir:"";
+  let note=null,override=null,nSets=baseSets,addBridge=false;
   if(ex&&ex.loading_type!=="自重"&&w0!=null&&w0!==""){
     const anyLowIn=arr=>lo!=null&&arr&&arr.some(s=>s.reps!=null&&s.reps!==""&&+s.reps<lo);
     const allHi=hi!=null&&last.every(s=>s.reps!=null&&s.reps!==""&&+s.reps>=hi);
     // 減量は「直近2セッション連続で下限割れ」のときだけ。増量直後は前回が下限割れでない(上限達成)ので自動的に猶予が入り、上げ下げの振動を防ぐ。
     const sess2=recentWorkSessions(exId,date,2);
     const twoLow=anyLowIn(sess2[0])&&anyLowIn(sess2[1]);
-    if(allHi){const nx=nextNotch(+w0);if(nx!=null){override=nx;note={type:"up",from:+w0,to:nx,hi};}}
-    else if(twoLow){const pv=prevNotch(+w0);if(pv!=null){override=pv;note={type:"down",from:+w0,to:pv,lo};}}
+    const curSets=last.length;const nx=nextNotch(+w0);
+    if(allHi){
+      const far=nx!=null&&(nx-(+w0))/(+w0)>NOTCH_FAR;
+      if(far&&curSets<baseSets+BRIDGE_MAX_ADD){
+        // 次の刻みが遠い→重量据え置きでセット+1(ボリューム橋渡し)。上限に届き続ければ最大base+2まで積む。
+        nSets=curSets+1;addBridge=true;note={type:"addset",to:nSets,weight:+w0,next:nx};
+      }else if(nx!=null){
+        // 刻みが近い or 橋渡し上限→重量アップしセット数はbaselineに戻す。
+        override=nx;nSets=baseSets;note={type:"up",from:+w0,to:nx,hi,fromSets:curSets>baseSets?curSets:null};
+      }else{nSets=Math.max(baseSets,curSets);} // これ以上重い刻みが無い
+    }else if(twoLow){
+      const pv=prevNotch(+w0);if(pv!=null){override=pv;nSets=baseSets;note={type:"down",from:+w0,to:pv,lo};}
+    }else{
+      nSets=Math.max(baseSets,curSets); // 範囲内維持: 橋渡しで増えたセットは保つ
+    }
   }
   const sets=[];
-  for(let i=0;i<n;i++){const src=last[i]||last[last.length-1];
-    sets.push({weight:override!=null?override:(src?src.weight:""),
-      reps:override!=null?"":(src?src.reps:""),
-      rir:src?src.rir:(hintItem?hintItem.rir:""),set_type:"normal"});}
+  for(let i=0;i<nSets;i++){const src=last[i]||last[last.length-1];
+    if(override!=null){sets.push({weight:override,reps:"",rir:src?src.rir:hintRir,set_type:"normal"});}
+    else if(addBridge&&i>=last.length){sets.push({weight:+w0,reps:"",rir:hintRir,set_type:"normal"});} // 追加セットは同重量・reps空
+    else{sets.push({weight:src?src.weight:"",reps:src?src.reps:"",rir:src?src.rir:hintRir,set_type:"normal"});}}
   return{sets,note};
 }
 function exRepTarget(exId){let hi=null;STATE.templates.forEach(t=>t.items.forEach(it=>{if(it.exercise_id===exId&&(hi==null||it.rep_high>hi))hi=it.rep_high;}));return hi;}
