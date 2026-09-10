@@ -192,6 +192,12 @@
   .rir-tip[open] summary::before{content:"▾ "}
   .rir-tip>div{padding:0 0 11px;line-height:1.7}
   .rir-tip b{color:var(--text)}
+  .plateau-banner{background:rgba(201,138,63,.13);border:.5px solid rgba(201,138,63,.35);border-radius:12px;padding:11px 13px;margin-bottom:14px;font-size:13px}
+  .plateau-banner .pb-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;cursor:pointer;color:#e0b070;font-weight:600}
+  .plateau-banner .pb-go{margin-left:auto;color:var(--dim);font-weight:400;font-size:12px}
+  .plateau-banner .pb-deload{margin-top:9px;padding-top:9px;border-top:.5px solid rgba(201,138,63,.25);color:var(--muted);line-height:1.6}
+  .plateau-banner .pb-deload b{color:var(--text)}
+  .plateau-banner .pb-deload .btn-sm{margin-top:8px}
   .today-card .go{background:var(--patina);color:#0d1512;border:none;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:500}
   .today-card .go:active{transform:scale(.98)}
   .need-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
@@ -557,7 +563,7 @@ function renderAnalysis(){
   const nextDisabled=STATE.weekOffset>=0;document.getElementById("wkNext").disabled=nextDisabled;
   const A=aggregateWeek(ws);
   let html="";
-  if(STATE.weekOffset===0){html+=quickStartHTML();html+=homeSuggestHTML();html+=bodyDiagramHTML();html+=rankBadgeHTML();html+=homeProgressHTML();}
+  if(STATE.weekOffset===0){html+=quickStartHTML();html+=homeSuggestHTML();html+=plateauSummaryHTML();html+=bodyDiagramHTML();html+=rankBadgeHTML();html+=homeProgressHTML();}
   if(factor!==1)html+=`<div class="msg" style="display:block;background:rgba(201,138,63,.16);color:#e0b070">デロード週：ボリューム目安を45%に下げて表示中</div>`;
   html+=`<div class="summary-card"><div class="summary-grid">
     <div class="stat"><div class="k">総セット</div><div class="v">${A.setCount}</div></div>
@@ -1402,6 +1408,19 @@ function currentStreakWeeks(){
   for(let i=0;;i++){const ws=new Date(base.getTime()-i*7*864e5);
     if(aggregateWeek(ws).setCount>0)n++;else break;}
   return n;
+}
+// #5: 停滞の導線をホームに(出しすぎないよう停滞がある時だけ)。既存 detectPlateaus を再利用。
+function plateauSummaryHTML(){
+  const ps=STATE.plateaus||[];if(!ps.length)return"";
+  const names=ps.slice(0,3).map(p=>{const x=STATE.exMap[p.exercise_id];return x?x.name:p.exercise_id;});
+  const more=ps.length>3?` ほか${ps.length-3}種目`:"";
+  const first=esc(ps[0].exercise_id);
+  const systemic=ps.length>=3; // 複数同時停滞=全身疲労のサイン→デロード提案
+  return `<div class="plateau-banner">
+    <div class="pb-head" onclick="STATE.trendMode='exercise';STATE.trendEx='${first}';switchTab('trend')">
+      ⚠️ 停滞ぎみ ${ps.length}種目：${esc(names.join(" / "))}${more}<span class="pb-go">対処法を見る ›</span></div>
+    ${systemic?`<div class="pb-deload">複数種目が同時に停滞＝全身の疲労サインかも。<b>デロード週（ボリューム40%減で1週）</b>を挟むと伸びが戻りやすいです。種目替えも手。<button class="btn-sm accent" onclick="openCoach()">デロードを設定</button></div>`:""}
+  </div>`;
 }
 function rankBadgeHTML(){
   const n=lifetimeSetCount();if(!n)return"";
