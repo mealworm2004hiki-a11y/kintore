@@ -762,7 +762,7 @@ function renderRecord(){
     const note=en._note;
     const noteHTML=note?(
       note.type==="up"
-      ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成 → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg にアップして挑戦${note.fromSets?`（セットは${note.fromSets}→${en.sets.length}本に戻す）`:""}</div>`
+      ?`<div class="note-badge up">🔺 前回は全セット ${note.hi}回 を達成${note.rir!=null?`・全セットRIR${note.rir}以上で余裕あり`:""} → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に${note.jump2?"<b>2段</b>":""}アップして挑戦${note.fromSets?`（セットは${note.fromSets}→${en.sets.length}本に戻す）`:""}</div>`
       :note.type==="addset"
       ?`<div class="note-badge up">➕ 全セット上限達成！ただし次の重量 ${fmtN(note.next)}kg は刻みが大きすぎるので、今回は同じ ${fmtN(note.weight)}kg で <b>${note.to}セット目</b>を追加してボリュームで前進。上限を続けたら次に重量アップします</div>`
       :`<div class="note-badge down">🔻 2回連続で ${note.lo}回 に届かないセットがあった → ${fmtN(note.from)}kg から ${fmtN(note.to)}kg に戻して仕切り直し</div>`):"";
@@ -1245,15 +1245,27 @@ function smartSetsFor(exId,date,hintItem){
     const sess2=recentWorkSessions(exId,date,2);
     const twoLow=anyLowIn(sess2[0])&&anyLowIn(sess2[1]);
     const curSets=last.length;const nx=nextNotch(+w0);
+    // RIR活用: 全ワークセットのRIRが判明していて最も追い込んだセットでも2回以上余裕→1段多く上げてよい(Refalo2023)。未入力があればレップのみで判定(従来通り)。
+    const rirs=last.map(s=>s.rir===""||s.rir==null?null:+s.rir);
+    const rirKnown=rirs.length>0&&rirs.every(v=>v!=null&&!isNaN(v));
+    const minRir=rirKnown?Math.min(...rirs):null;
+    const doubleUp=minRir!=null&&minRir>=2;
     if(allHi){
       const far=nx!=null&&(nx-(+w0))/(+w0)>NOTCH_FAR;
-      if(far&&curSets<baseSets+BRIDGE_MAX_ADD){
-        // 次の刻みが遠い→重量据え置きでセット+1(ボリューム橋渡し)。上限に届き続ければ最大base+2まで積む。
-        nSets=curSets+1;addBridge=true;note={type:"addset",to:nSets,weight:+w0,next:nx};
-      }else if(nx!=null){
-        // 刻みが近い or 橋渡し上限→重量アップしセット数はbaselineに戻す。
-        override=nx;nSets=baseSets;note={type:"up",from:+w0,to:nx,hi,fromSets:curSets>baseSets?curSets:null};
-      }else{nSets=Math.max(baseSets,curSets);} // これ以上重い刻みが無い
+      if(nx==null){nSets=Math.max(baseSets,curSets);} // これ以上重い刻みが無い
+      else if(far){
+        if(doubleUp){
+          // 余裕十分→遠い刻みでも橋渡しせず重量アップ(余力が大ジャンプを吸収)。
+          override=nx;nSets=baseSets;note={type:"up",from:+w0,to:nx,hi,rir:minRir};
+        }else if(curSets<baseSets+BRIDGE_MAX_ADD){
+          // 次の刻みが遠い→重量据え置きでセット+1(ボリューム橋渡し)。上限に届き続ければ最大base+2まで積む。
+          nSets=curSets+1;addBridge=true;note={type:"addset",to:nSets,weight:+w0,next:nx};
+        }else{override=nx;nSets=baseSets;note={type:"up",from:+w0,to:nx,hi,fromSets:curSets>baseSets?curSets:null};}
+      }else{
+        // 刻みが近い→重量アップ(セット数はbaselineに戻す)。余裕十分なら2段上げ。
+        if(doubleUp){const nx2=nextNotch(nx);override=nx2!=null?nx2:nx;nSets=baseSets;note={type:"up",from:+w0,to:override,hi,rir:minRir,jump2:nx2!=null};}
+        else{override=nx;nSets=baseSets;note={type:"up",from:+w0,to:nx,hi};}
+      }
     }else if(twoLow){
       const pv=prevNotch(+w0);if(pv!=null){override=pv;nSets=baseSets;note={type:"down",from:+w0,to:pv,lo};}
     }else{
